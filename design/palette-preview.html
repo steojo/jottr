@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Accent options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Shared neutrals + status hues. Only the accent changes per option. */
+  :root {
+    --bg-base: #0c0c0e;
+    --bg-elevated: #121215;
+    --bg-hover: #18181c;
+    --border-subtle: #1c1c21;
+    --border-base: #26262c;
+    --border-strong: #33333a;
+    --text-primary: #ededef;
+    --text-secondary: #a0a0a8;
+    --text-tertiary: #6e6e77;
+    --text-quaternary: #4a4a52;
+    --status-progress: #edb543;
+    --status-urgent: #f2924a;
+    --status-error: #eb5757;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #050506;
+    color: var(--text-primary);
+    font: 400 13px/1.4 Inter, system-ui, sans-serif;
+    padding: 28px 32px;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: var(--text-tertiary); margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .option-label { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-weight: 500; }
+  .option-label .swatch { width: 14px; height: 14px; border-radius: 4px; background: var(--accent); }
+  .option-label .hex { font: 400 11px var(--mono); color: var(--text-tertiary); }
+
+  .app {
+    display: flex;
+    height: 430px;
+    background: var(--bg-base);
+    border: 1px solid var(--border-base);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .sidebar {
+    width: 150px;
+    border-right: 1px solid var(--border-subtle);
+    padding: 12px 8px;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+  .sidebar .item { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 6px; }
+  .sidebar .item.active { background: var(--bg-hover); color: var(--text-primary); }
+  .sidebar .count { margin-left: auto; font: 400 11px var(--mono); color: var(--text-tertiary); }
+  .sidebar .section { font: 400 10px var(--mono); color: var(--text-quaternary); text-transform: uppercase; letter-spacing: .06em; padding: 14px 8px 6px; }
+  .sidebar .dot { width: 8px; height: 8px; border-radius: 2px; }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topbar { height: 44px; display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid var(--border-subtle); gap: 8px; }
+  .crumb { color: var(--text-tertiary); }
+  .crumb b { color: var(--text-primary); font-weight: 500; }
+  .spacer { flex: 1; }
+  .btn { height: 26px; padding: 0 10px; border-radius: 6px; font: 500 12px Inter, system-ui; display: flex; align-items: center; border: 1px solid var(--border-base); color: var(--text-secondary); background: transparent; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+
+  .group { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: var(--bg-elevated); border-bottom: 1px solid var(--border-subtle); font-weight: 500; }
+  .group .count { color: var(--text-tertiary); font: 400 11px var(--mono); }
+
+  .row { position: relative; height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--border-subtle); }
+  .row .id { font: 400 11px var(--mono); color: var(--text-tertiary); width: 52px; }
+  .row .title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .slots { display: flex; align-items: center; gap: 10px; color: var(--text-tertiary); font-size: 12px; }
+  .row .date { font: 400 11px var(--mono); width: 44px; text-align: right; }
+  .row .date.overdue { color: var(--status-error); }
+  .chip { height: 20px; display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; border: 1px solid var(--border-base); border-radius: 10px; font-size: 11px; color: var(--text-secondary); }
+  .chip i { width: 6px; height: 6px; border-radius: 50%; }
+  .check { width: 14px; height: 14px; border-radius: 4px; background: var(--accent); display: grid; place-items: center; }
+
+  /* Row states */
+  .row.selected { background: var(--bg-hover); }
+  .row.selected::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--accent); }
+  .row.focused { box-shadow: inset 0 0 0 1.5px var(--accent); border-radius: 6px; }
+  .row.multi { background: var(--accent-deep); }
+  .row.done .title { color: var(--text-secondary); }
+
+  svg { flex: none; display: block; }
+</style>
+</head>
+<body>
+<h1>Accent options</h1>
+<p class="sub">The neutrals and status colours are the same everywhere. Only the accent changes: selected row, focus ring, multi-select, primary button, Done.</p>
+<div class="grid" id="grid"></div>
+
+<script>
+const OPTIONS = [
+  { key: "A", name: "Violet", accent: "#7c6cf2", deep: "rgba(124,108,242,0.14)", on: "#ffffff", review: "#4fa0f2" },
+  { key: "B", name: "Blue", accent: "#4a8bff", deep: "rgba(74,139,255,0.14)", on: "#ffffff", review: "#a78bfa" },
+  { key: "C", name: "Green", accent: "#3dd68c", deep: "rgba(61,214,140,0.12)", on: "#07130d", review: "#4fa0f2" },
+  { key: "D", name: "Monochrome", accent: "#ededef", deep: "rgba(255,255,255,0.07)", on: "#0c0c0e", review: "#4fa0f2" },
+];
+
+const icon = {
+  backlog: () => `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="none" stroke="var(--text-tertiary)" stroke-width="1.5" stroke-dasharray="1.6 2"/></svg>`,
+  ready: () => `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="none" stroke="var(--text-secondary)" stroke-width="1.5"/></svg>`,
+  progress: () => `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="none" stroke="var(--status-progress)" stroke-width="1.5"/><path d="M7 3A4 4 0 0 0 7 11Z" fill="var(--status-progress)"/></svg>`,
+  review: () => `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6" fill="none" stroke="var(--status-review)" stroke-width="1.5"/><path d="M7 7L7 3A4 4 0 1 1 3 7Z" fill="var(--status-review)"/></svg>`,
+  done: () => `<svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75" fill="var(--accent)"/><path d="M4.2 7.2l1.9 1.9 3.7-3.9" fill="none" stroke="var(--on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+};
+const prio = {
+  none: () => `<svg width="14" height="14" viewBox="0 0 14 14"><path d="M2 7h2M6 7h2M10 7h2" stroke="var(--text-quaternary)" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  bars: (n) => `<svg width="14" height="14" viewBox="0 0 14 14">${[[1.5,8,4],[5.75,5,7],[10,2,10]].map(([x,y,h],i)=>`<rect x="${x}" y="${y}" width="2.5" height="${h}" rx="0.75" fill="${i<n?'var(--text-secondary)':'var(--text-quaternary)'}"/>`).join("")}</svg>`,
+  urgent: () => `<svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="3" fill="var(--status-urgent)"/><path d="M7 4v3.6" stroke="#0c0c0e" stroke-width="1.6" stroke-linecap="round"/><circle cx="7" cy="10" r="0.9" fill="#0c0c0e"/></svg>`,
+};
+
+const chip = (name, color) => `<span class="chip"><i style="background:${color}"></i>${name}</span>`;
+
+function row({ p, s, id, title, labels = [], project, date, cls = "", overdue = false }) {
+  const multi = cls.includes("multi");
+  return `<div class="row ${cls}">
+    ${multi ? `<span class="check"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2 5.2l2 2 4-4.4" fill="none" stroke="var(--on-accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>` : ""}
+    ${p}${icon[s]()}
+    <span class="id">${id}</span>
+    <span class="title">${title}</span>
+    <span class="slots">${labels.join("")}<span>${project}</span><span class="date ${overdue ? "overdue" : ""}">${date}</span></span>
+  </div>`;
+}
+
+function app(o) {
+  return `<div style="--accent:${o.accent};--accent-deep:${o.deep};--on-accent:${o.on};--status-review:${o.review}">
+    <div class="option-label"><span class="swatch"></span>${o.key} · ${o.name}<span class="hex">${o.accent}</span></div>
+    <div class="app">
+      <div class="sidebar">
+        <div class="item">Inbox<span class="count">3</span></div>
+        <div class="item">My Focus</div>
+        <div class="section">Boards</div>
+        <div class="item active"><span class="dot" style="background:#5b8def"></span>Engineering</div>
+        <div class="item"><span class="dot" style="background:#e27d9b"></span>Marketing</div>
+        <div class="item"><span class="dot" style="background:#5fbf8f"></span>Life</div>
+      </div>
+      <div class="main">
+        <div class="topbar"><span class="crumb">Engineering / <b>All tickets</b></span><span class="spacer"></span><span class="btn">Filter</span><span class="btn primary">New ticket</span></div>
+        <div class="group">${icon.progress()}In Progress<span class="count">2</span></div>
+        ${row({ p: prio.urgent(), s: "progress", id: "ENG-42", title: "Quick capture window", labels: [chip("feature", "#5fbf8f")], project: "v1", date: "Oct 9", cls: "selected" })}
+        ${row({ p: prio.bars(3), s: "review", id: "ENG-39", title: "SQLite full-text search", labels: [chip("perf", "#edb543")], project: "v1", date: "Oct 6", overdue: true })}
+        <div class="group">${icon.ready()}Ready<span class="count">3</span></div>
+        ${row({ p: prio.bars(2), s: "ready", id: "ENG-47", title: "Repeating tickets", labels: [chip("feature", "#5fbf8f")], project: "v1", date: "Oct 14", cls: "focused" })}
+        ${row({ p: prio.bars(1), s: "ready", id: "ENG-48", title: "Auto-archive setting", project: "v1", date: "—", cls: "multi" })}
+        ${row({ p: prio.none(), s: "ready", id: "ENG-50", title: "Export to file", project: "v1", date: "—", cls: "multi" })}
+        <div class="group">${icon.done()}Done<span class="count">1</span></div>
+        ${row({ p: prio.bars(2), s: "done", id: "ENG-31", title: "Board view drag and drop", labels: [chip("feature", "#5fbf8f")], project: "v1", date: "Oct 2", cls: "done" })}
+      </div>
+    </div>
+  </div>`;
+}
+
+document.getElementById("grid").innerHTML = OPTIONS.map(app).join("");
+</script>
+</body>
+</html>

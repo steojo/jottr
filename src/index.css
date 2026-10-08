@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens (PRD §6.1). Components use these, never raw hex values.
+ * Utilities: bg-surface, border-line, text-fg-secondary, bg-accent, etc.
+ */
+@theme {
+  --font-sans: "Inter Variable", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Surface (bg/*) */
+  --color-surface: #0c0c0e;
+  --color-surface-elevated: #121215;
+  --color-surface-hover: #18181c;
+
+  /* Border (border/*) */
+  --color-line-subtle: #1c1c21;
+  --color-line: #26262c;
+  --color-line-strong: #33333a;
+
+  /* Text (text/*) */
+  --color-fg: #ededef;
+  --color-fg-secondary: #a0a0a8;
+  --color-fg-tertiary: #6e6e77;
+  --color-fg-quaternary: #4a4a52;
+
+  /* Accent (accent/*): monochrome */
+  --color-accent: #ededef;
+  --color-accent-hover: #ffffff;
+  --color-accent-deep: rgb(255 255 255 / 0.07);
+  --color-on-accent: #0c0c0e;
+
+  /* Status (status/*) */
+  --color-status-progress: #edb543;
+  --color-status-review: #4fa0f2;
+  --color-status-urgent: #f2924a;
+  --color-status-error: #eb5757;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--color-surface);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    cursor: default;
+    user-select: none;
+  }
+}
