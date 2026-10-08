@@ -1,0 +1,155 @@
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use rusqlite::Row;
+use serde::{Deserialize, Serialize};
+use specta::Type;
+
+/// An enum stored in SQLite as its snake_case name, matching its serde form.
+macro_rules! text_enum {
+    ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+        #[serde(rename_all = "snake_case")]
+        pub enum $name { $($variant),+ }
+
+        impl $name {
+            pub fn as_str(self) -> &'static str {
+                match self { $(Self::$variant => $text),+ }
+            }
+        }
+
+        impl ToSql for $name {
+            fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+                Ok(self.as_str().into())
+            }
+        }
+
+        impl FromSql for $name {
+            fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+                match value.as_str()? {
+                    $($text => Ok(Self::$variant),)+
+                    _ => Err(FromSqlError::InvalidType),
+                }
+            }
+        }
+    };
+}
+
+text_enum!(Status {
+    Backlog => "backlog",
+    Ready => "ready",
+    InProgress => "in_progress",
+    InReview => "in_review",
+    Done => "done",
+    Canceled => "canceled",
+});
+
+text_enum!(Priority {
+    None => "none",
+    Low => "low",
+    Medium => "medium",
+    High => "high",
+    Urgent => "urgent",
+});
+
+text_enum!(BoardColor {
+    Gray => "gray",
+    Red => "red",
+    Orange => "orange",
+    Yellow => "yellow",
+    Green => "green",
+    Blue => "blue",
+    Purple => "purple",
+    Pink => "pink",
+});
+
+// Numbers crossing to TypeScript are f64 or i32: specta refuses i64 because JS
+// numbers can't represent it exactly. f64 exports as `number | null` (serde
+// turns NaN into null). Timestamps are milliseconds since the epoch.
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Board {
+    pub id: String,
+    pub name: String,
+    pub key: String,
+    pub color: BoardColor,
+}
+
+impl Board {
+    pub const COLUMNS: &'static str = "id, name, key, color";
+
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            key: row.get(2)?,
+            color: row.get(3)?,
+        })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Ticket {
+    pub id: String,
+    pub board_id: Option<String>,
+    pub board_key: Option<String>,
+    pub project_id: Option<String>,
+    pub number: Option<i32>,
+    pub title: String,
+    pub description: String,
+    pub status: Status,
+    pub priority: Priority,
+    pub due_date: Option<String>,
+    pub position: f64,
+    pub completed_at: Option<f64>,
+}
+
+impl Ticket {
+    /// Select list for `FROM tickets t LEFT JOIN boards b ON b.id = t.board_id`.
+    pub const COLUMNS: &'static str = "t.id, t.board_id, b.key, t.project_id, t.number, t.title, \
+         t.description, t.status, t.priority, t.due_date, t.position, t.completed_at";
+
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self {
+            id: row.get(0)?,
+            board_id: row.get(1)?,
+            board_key: row.get(2)?,
+            project_id: row.get(3)?,
+            number: row.get(4)?,
+            title: row.get(5)?,
+            description: row.get(6)?,
+            status: row.get(7)?,
+            priority: row.get(8)?,
+            due_date: row.get(9)?,
+            position: row.get(10)?,
+            completed_at: row.get::<_, Option<i64>>(11)?.map(|ms| ms as f64),
+        })
+    }
+}
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NewBoard {
+    pub name: String,
+    pub key: String,
+    pub color: BoardColor,
+}
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct NewTicket {
+    /// `None` creates the ticket in the Inbox.
+    pub board_id: Option<String>,
+    pub title: String,
+    pub status: Status,
+    pub priority: Priority,
+}
+
+/// Fields left as `None` are unchanged.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketPatch {
+    pub title: Option<String>,
+    pub status: Option<Status>,
+    pub priority: Option<Priority>,
+}

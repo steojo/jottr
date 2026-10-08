@@ -101,7 +101,7 @@ Board  (e.g. Engineering, Marketing, Life)
 ### 3.3 Tickets
 - The unit of work. Tickets move through statuses on the board.
 - Standard fields:
-  - **ID**: board-prefixed key (e.g. `ENG-42`)
+  - **ID**: board-prefixed key (e.g. `ENG-42`). Numbers count up per board. A ticket that moves to another board gets that board's next number.
   - **Title**
   - **Description**
   - **Status**
@@ -114,6 +114,7 @@ Board  (e.g. Engineering, Marketing, Life)
 - A single, global holding area for tickets that aren't on a board yet.
 - Quick-captured tickets land here (see §5.2).
 - Tickets are triaged from the Inbox by moving them to a board (and optionally a project).
+- Inbox tickets have no ID until they're moved to a board.
 
 ### 3.5 Statuses
 Standard, fixed workflow shared by all boards:
@@ -130,7 +131,7 @@ Standard views:
 
 ### 5.1 Command menu & keyboard shortcuts
 - **⌘K** opens a command menu for creating tickets, changing status or priority, jumping to boards and projects, and more.
-- Every action has a keyboard shortcut. The app is fully usable without a mouse. See §6.4 for the keyboard rules.
+- Every action has a keyboard shortcut. The app is fully usable without a mouse. See §6.4 for the keyboard and mouse rules.
 
 ### 5.2 Quick capture
 - A system-wide hotkey opens a small floating input from anywhere on macOS, without switching apps.
@@ -237,7 +238,11 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 | Low / Medium / High | Signal bars: 1 / 2 / 3 filled |
 | Urgent | Filled square with `!` |
 
-### 6.4 Keyboard rules
+### 6.4 Keyboard & mouse rules
+- **Everything works with the mouse too.** The keyboard is faster, but never required.
+  - Click a row's status or priority icon to open that picker.
+  - Right-click a ticket for a menu with Status, Priority and Move to. It shows each option's icon, a tick on the current value, and the shortcut key.
+  - Hover tooltips name the shortcut (e.g. "Change status · S"), so mouse users learn the keys over time.
 - **Every mouse action has a shortcut.** ⌘K is the fallback, not the main path. It shows each command's shortcut so the user learns them.
 - **Single letters act on the selection** (one ticket or many), e.g. `S` status, `P` priority.
 - **`G` is a prefix for navigation only.** Pressing `G` alone does nothing; it waits for the next key.

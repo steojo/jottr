@@ -35,6 +35,16 @@
   --color-status-review: #4fa0f2;
   --color-status-urgent: #f2924a;
   --color-status-error: #eb5757;
+
+  /* Swatches: colours that describe objects (boards, later labels) */
+  --color-swatch-gray: #8b8b94;
+  --color-swatch-red: #e5675f;
+  --color-swatch-orange: #ec9254;
+  --color-swatch-yellow: #e3be4f;
+  --color-swatch-green: #5fbf8f;
+  --color-swatch-blue: #5b8def;
+  --color-swatch-purple: #9b84ec;
+  --color-swatch-pink: #e27d9b;
 }
 
 @layer base {
