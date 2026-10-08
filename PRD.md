@@ -92,6 +92,7 @@ Board  (e.g. Engineering, Marketing, Life)
 - Top-level containers for an area of work or life, e.g. **Engineering**, **Marketing**, **Life**.
 - A user can have multiple boards.
 - Each board holds many projects and tickets.
+- Each board has a name, a short key used in ticket IDs (e.g. `ENG`), and a colour from a small fixed set.
 
 ### 3.2 Projects
 - A grouping of related tickets within a board.
@@ -172,7 +173,10 @@ Standard views:
 
 ## 6. UI & Design Principles
 
-Design reference: the [Notch case study](https://dribbble.com/shots/27629772-Notch-Issue-Tracker), saved in `references/notch/`. We are adopting its **principles, not its visuals**. Colours are our own and still to be decided.
+Design references are saved in `references/` and kept out of git. We are adopting their **principles, not their visuals**.
+- [Notch case study](https://dribbble.com/shots/27629772-Notch-Issue-Tracker): the main reference for the design system, keyboard rules and list rows
+- [Blitzit for macOS](https://dribbble.com/shots/27770145-Blitzit-Project-Management-for-macOS-Kanban-Board-Task-Lists): board columns and cards
+- [Personal task dashboard](https://dribbble.com/shots/27637209-Personal-Task-Workflow-Organization-Tablet-Dashboard-Design): list grouping and the sidebar
 
 ### 6.1 Theme & colour
 - **Dark mode first.** Light mode can come later as a token swap.
@@ -305,8 +309,10 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 
 ### 6.5 List rows
 - **Row height: 40px.** The whole row is the click target.
-- Grouped by status by default.
-- **Fixed layout on every row:** status, priority and ID on the left, then the title, then fixed slots on the right in the same order on every row: labels, project, due date.
+- Grouped by status by default. Each group header shows the status icon, name and count, plus a **"+"** on hover that creates a ticket in that status.
+- **Fixed layout on every row:** status, priority and ID on the left, then the title, then fixed slots on the right in the same order on every row: labels, checklist progress, project, due date. Empty slots take no space.
+- **Checklist progress:** a small progress ring plus a count (e.g. `2/5`). Only shown if the ticket has a checklist.
+- **Done and Canceled tickets** have dimmed titles, so finished work recedes.
 - **Row states:**
   - **Default:** base surface, one hairline below
   - **Hover:** background change only. No border change, so text never shifts.
@@ -315,26 +321,43 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
   - **Multi-selected:** accent tint, plus a checkbox that only appears once more than one row is selected
 
 ### 6.6 Board view
-- Columns are the statuses.
+- Columns are the statuses, at a fixed width. The board scrolls sideways if needed.
 - Tickets move by drag and drop **or** by keyboard, with identical visuals for both.
+- **Column header:** status icon, name, ticket count, a **"+"** that creates a ticket in that status, and a collapse button.
+- **Collapsible columns:** any column can collapse to a thin vertical strip showing its icon, its name (written sideways) and its count. Click the strip to expand it. Collapsed columns are remembered per board. Canceled starts collapsed.
+- **Done column grouped by day:** Done tickets are grouped by the day they were completed, newest first ("Today", "Yesterday", "Sun, 27 Sept"), each with a count.
 
-### 6.7 Ticket page
+**Cards**
+- Elevated surface, subtle border, rounded corners.
+- **Title:** up to 2 lines, then truncated.
+- **Meta row** below the title: priority, ID, labels, checklist progress, with the due date right-aligned. Empty slots take no space.
+- The project isn't shown on cards, to keep them easy to scan. Filter the board by project instead.
+- Card states match the list row states (§6.5): hover, selected, keyboard focus, multi-selected.
+- Done and Canceled cards have dimmed titles.
+
+### 6.7 Sidebar
+- **Top:** Inbox (with a count of untriaged tickets) and My Focus.
+- **Boards:** each board is shown with its colour dot. Expand a board to see its projects. Expanded state is remembered.
+- Clicking a board shows all its tickets; clicking a project shows only that project's tickets.
+- Toggle with `⌘\`.
+
+### 6.8 Ticket page
 - **The title is the largest element on the page.** No label above it, no extra chrome.
 - Main column: description, checklist, attachments.
 - Right column: properties (status, priority, labels, project, due date, repeat). The label is on the left and the value is right-aligned, so empty values are easy to spot.
 
-### 6.8 Motion
+### 6.9 Motion
 - **Only one animated element:** the drop target on the board. Everything else changes instantly.
 - Respects the macOS Reduce Motion setting.
 
-### 6.9 Screen states
+### 6.10 Screen states
 Every view has a designed version of each state:
 - **Empty:** nothing here yet, with a hint (e.g. "Press C to create a ticket")
 - **Filtered empty:** nothing matches, with a "Clear filters" action
 - **Loading:** a skeleton. This should rarely be seen, since everything is local.
 - **Error:** what went wrong, plus a retry
 
-### 6.10 Accessibility
+### 6.11 Accessibility
 - Status is shown by shape, not just colour.
 - The focus ring is always visible for keyboard users.
 - Important text meets a 4.5:1 contrast ratio.
