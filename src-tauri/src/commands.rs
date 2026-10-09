@@ -2,8 +2,8 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::models::{
-    Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Status, Ticket,
-    TicketPatch,
+    Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Settings, Status,
+    Ticket, TicketPatch,
 };
 use crate::store::{self, err, CmdResult};
 
@@ -175,4 +175,38 @@ pub async fn search_tickets(db: State<'_, Db>, query: String) -> CmdResult<Vec<T
 #[specta::specta]
 pub async fn list_focus(db: State<'_, Db>, due_by: String) -> CmdResult<Vec<Ticket>> {
     store::list_focus(&*db.0.lock().map_err(err)?, due_by)
+}
+
+/// Archived tickets from every board and the Inbox, most recently finished first.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_archived(db: State<'_, Db>) -> CmdResult<Vec<Ticket>> {
+    store::list_archived(&*db.0.lock().map_err(err)?)
+}
+
+/// Archives Done tickets that are due, if auto-archive is on. Returns how many it archived.
+#[tauri::command]
+#[specta::specta]
+pub async fn auto_archive(db: State<'_, Db>) -> CmdResult<i32> {
+    store::auto_archive(&*db.0.lock().map_err(err)?)
+}
+
+/// Brings a ticket back from the Archive to the top of its status group.
+#[tauri::command]
+#[specta::specta]
+pub async fn restore_ticket(db: State<'_, Db>, id: String) -> CmdResult<Ticket> {
+    store::restore_ticket(&*db.0.lock().map_err(err)?, id)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_settings(db: State<'_, Db>) -> CmdResult<Settings> {
+    store::get_settings(&*db.0.lock().map_err(err)?)
+}
+
+/// Saves the settings, then archives anything they now make due.
+#[tauri::command]
+#[specta::specta]
+pub async fn update_settings(db: State<'_, Db>, settings: Settings) -> CmdResult<Settings> {
+    store::update_settings(&*db.0.lock().map_err(err)?, settings)
 }

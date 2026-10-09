@@ -9,11 +9,14 @@ import { FilterBar, FilterMenu } from "./components/Filters";
 import { ConfirmDialog, NameDialog } from "./components/FormDialogs";
 import { ChevronUpDownIcon, PlusIcon, ProjectIcon } from "./components/icons";
 import { Picker } from "./components/Picker";
+import { SettingsPage } from "./components/Settings";
 import { ShortcutSheet } from "./components/ShortcutSheet";
 import { Sidebar, type View } from "./components/Sidebar";
 import { TicketList } from "./components/TicketList";
 import { TicketPage } from "./components/TicketPage";
 import {
+  useArchive,
+  useAutoArchive,
   useBoards,
   useCreateProject,
   useDeleteProject,
@@ -22,6 +25,8 @@ import {
   useMoveTicket,
   useProjects,
   useRenameProject,
+  useRestoreTicket,
+  useSettings,
   useTickets,
 } from "./lib/queries";
 import { runShortcut, useShortcuts } from "./lib/shortcuts";
@@ -30,7 +35,9 @@ import {
   NO_FILTERS,
   SWATCH_BG,
   applyFilters,
+  archiveGroups,
   boardColumns,
+  dayCount,
   filterCount,
   focusGroups,
   groupTickets,
@@ -60,6 +67,8 @@ function App() {
   const [deletingTicket, setDeletingTicket] = useState<Ticket | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = usePersistentState<string[]>("jottr.sidebar.expanded", []);
+  // Where Esc or ⌘, on Settings goes back to.
+  const settingsReturn = useRef<View>({ kind: "inbox" });
 
   const boards = useBoards().data ?? [];
   const projects = useProjects().data ?? [];
@@ -68,6 +77,10 @@ function App() {
   const boardTickets = useTickets(view.kind === "board" ? view.boardId : null).data;
   const inboxCount = useTickets(null).data?.length ?? 0;
   const focusTickets = useFocus().data;
+  const archive = useArchive(view.kind === "archive");
+  const settings = useSettings().data;
+  const restoreTicket = useRestoreTicket();
+  useAutoArchive();
   const createProject = useCreateProject();
   const renameProject = useRenameProject();
   const deleteProject = useDeleteProject();
@@ -86,14 +99,22 @@ function App() {
     const scoped =
       view.kind === "focus"
         ? focusTickets
-        : project
-          ? boardTickets?.filter((t) => t.projectId === project.id)
-          : boardTickets;
+        : view.kind === "archive"
+          ? archive.data
+          : project
+            ? boardTickets?.filter((t) => t.projectId === project.id)
+            : boardTickets;
     return scoped && applyFilters(scoped, filters);
-  }, [view.kind, focusTickets, boardTickets, project, filters]);
+  }, [view.kind, focusTickets, archive.data, boardTickets, project, filters]);
 
   const groups = useMemo(
-    () => tickets && (view.kind === "focus" ? focusGroups(tickets) : groupTickets(tickets, view.kind === "board")),
+    () =>
+      tickets &&
+      (view.kind === "focus"
+        ? focusGroups(tickets)
+        : view.kind === "archive"
+          ? archiveGroups(tickets)
+          : groupTickets(tickets, view.kind === "board")),
     [tickets, view.kind],
   );
   // The order J/K follow on the ticket page matches what's on screen.
@@ -110,6 +131,15 @@ function App() {
   // What ticket actions (S, P, ⌘⇧C, …) apply to.
   const target = openTicket ?? activeTicket;
 
+  // A ticket restored while open (with Restore, or by changing its status) goes back to
+  // its board, still open. Waits for the Archive to load so a stale list can't trigger it.
+  useEffect(() => {
+    if (view.kind !== "archive" || !openTicket || !archive.data || archive.isFetching) return;
+    if (archive.data.some((t) => t.id === openTicket.id)) return;
+    setView(openTicket.boardId ? { kind: "board", boardId: openTicket.boardId } : { kind: "inbox" });
+    setFilters(NO_FILTERS);
+  }, [view.kind, openTicket, archive.data, archive.isFetching]);
+
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(null), 1600);
@@ -117,6 +147,7 @@ function App() {
   }, [toast]);
 
   function navigate(next: View) {
+    if (next.kind === "settings" && view.kind !== "settings") settingsReturn.current = view;
     setView(next);
     setActiveId(null);
     setOpenId(null);
@@ -128,9 +159,15 @@ function App() {
     setOpenId(ticket.id);
   }
 
-  /** Opens a ticket from anywhere (e.g. search) on its own board, or in the Inbox. */
+  /** Opens a ticket from anywhere (e.g. search) on its own board, in the Inbox, or in the Archive. */
   function openAnywhere(ticket: Ticket) {
-    navigate(ticket.boardId ? { kind: "board", boardId: ticket.boardId } : { kind: "inbox" });
+    navigate(
+      ticket.archivedAt !== null
+        ? { kind: "archive" }
+        : ticket.boardId
+          ? { kind: "board", boardId: ticket.boardId }
+          : { kind: "inbox" },
+    );
     // Show it straight away, before its board's tickets have loaded.
     lastOpen.current = ticket;
     open(ticket);
@@ -143,9 +180,11 @@ function App() {
 
   function moveTicket(ticket: Ticket, to: Destination) {
     move.mutate({ ticket, to });
-    // My Focus spans every board, so a move never takes a ticket out of it.
+    // My Focus and the Archive span every board, so a move never takes a ticket out of them.
     const staysInView =
-      view.kind === "focus" || (to.boardId === ticket.boardId && (!project || to.projectId === project.id));
+      view.kind === "focus" ||
+      view.kind === "archive" ||
+      (to.boardId === ticket.boardId && (!project || to.projectId === project.id));
     if (staysInView) return;
     if (ticket.id === openId) {
       // An open ticket travels with you to where it went.
@@ -166,6 +205,16 @@ function App() {
     if (ticket.id === activeId || ticket.id === openId) setActiveId((order[i + 1] ?? order[i - 1])?.id ?? null);
   }
 
+  function restore(ticket: Ticket) {
+    if (ticket.archivedAt === null) return;
+    restoreTicket.mutate(ticket);
+    // In the list, the selection passes to a neighbour. An open ticket goes back to its board (see above).
+    if (ticket.id === activeId && ticket.id !== openId) {
+      const i = order.findIndex((t) => t.id === ticket.id);
+      setActiveId((order[i + 1] ?? order[i - 1])?.id ?? null);
+    }
+  }
+
   function copyId(ticket: Ticket) {
     const text = ticketKey(ticket) ?? ticket.title;
     navigator.clipboard.writeText(text).then(
@@ -175,21 +224,25 @@ function App() {
   }
 
   const toggleLayout = () => view.kind === "board" && setLayout(showBoard ? "list" : "board");
+  const toggleSettings = () => navigate(view.kind === "settings" ? settingsReturn.current : { kind: "settings" });
 
   useShortcuts({
     c: () => setCreating("backlog"),
     "mod+k": () => setCommandMenu("all"),
     "/": () => setCommandMenu("search"),
     "?": () => setShowShortcuts(true),
-    f: () => !openTicket && setFiltering(true),
+    f: () => !openTicket && view.kind !== "settings" && setFiltering(true),
+    a: () => target && restore(target),
     "mod+shift+c": () => target && copyId(target),
     "mod+backspace": () => target && setDeletingTicket(target),
     "g i": () => navigate({ kind: "inbox" }),
     "g f": () => navigate({ kind: "focus" }),
+    "g a": () => navigate({ kind: "archive" }),
     "g b": () => boards.length > 0 && setSwitchingBoard(true),
     "g p": () => projects.some((p) => p.boardId === board?.id) && setSwitchingProject(true),
     "mod+\\": () => setSidebarOpen((o) => !o),
     "mod+b": toggleLayout,
+    "mod+,": toggleSettings,
   });
 
   // ⌘K. Ticket actions reuse the views' own shortcuts, so they behave exactly like the keys.
@@ -197,6 +250,9 @@ function App() {
   if (target) {
     const ticketCommand = (id: string, label: string, shortcut: string, run: () => void, keywords?: string) =>
       commands.push({ id, label, group: ticketKey(target) ?? "Ticket", shortcut, run, keywords });
+    if (target.archivedAt !== null) {
+      ticketCommand("restore", "Restore from the Archive", "A", () => restore(target), "unarchive");
+    }
     if (!openTicket) ticketCommand("open", "Open ticket", "↵", () => open(target));
     ticketCommand("status", "Change status…", "S", () => runShortcut("s"));
     ticketCommand("priority", "Change priority…", "P", () => runShortcut("p"));
@@ -226,6 +282,15 @@ function App() {
   commands.push(
     { id: "go-inbox", label: "Go to Inbox", group: "Go to", shortcut: "G I", run: () => navigate({ kind: "inbox" }) },
     { id: "go-focus", label: "Go to My Focus", group: "Go to", shortcut: "G F", run: () => navigate({ kind: "focus" }) },
+    { id: "go-archive", label: "Go to Archive", group: "Go to", shortcut: "G A", run: () => navigate({ kind: "archive" }) },
+    {
+      id: "go-settings",
+      label: "Go to Settings",
+      group: "Go to",
+      shortcut: "⌘ ,",
+      keywords: "preferences auto-archive",
+      run: () => navigate({ kind: "settings" }),
+    },
     ...boards.map(
       (b): Command => ({
         id: `go-${b.id}`,
@@ -251,7 +316,7 @@ function App() {
       }),
     ),
   );
-  if (!openTicket) {
+  if (!openTicket && view.kind !== "settings") {
     commands.push({ id: "filter", label: "Filter…", group: "View", shortcut: "F", run: () => setFiltering(true) });
   }
   if (view.kind === "board") {
@@ -273,6 +338,10 @@ function App() {
   const scopeLabel =
     view.kind === "focus" ? (
       "My Focus"
+    ) : view.kind === "archive" ? (
+      "Archive"
+    ) : view.kind === "settings" ? (
+      "Settings"
     ) : (
       <>
         {board && <span className={`size-2 rounded-sm ${SWATCH_BG[board.color]}`} />}
@@ -295,6 +364,17 @@ function App() {
       ? { title: "Nothing matches these filters", action: { label: "Clear filters", onClick: () => setFilters(NO_FILTERS) } }
       : view.kind === "focus"
         ? { title: "Nothing needs your focus", hint: "to capture a ticket" }
+        : view.kind === "archive"
+          ? settings?.autoArchive === false
+            ? {
+                title: "Archive is empty",
+                detail: "Auto-archive is off.",
+                action: { label: "Open settings", onClick: () => navigate({ kind: "settings" }) },
+              }
+            : {
+                title: "Archive is empty",
+                detail: `Done tickets move here ${dayCount(settings?.archiveAfterDays ?? 7)} after they're finished.`,
+              }
         : project
           ? { title: "No tickets in this project", hint: "to create one" }
           : board
@@ -351,52 +431,56 @@ function App() {
             <>
               <span className="pointer-events-none flex items-center gap-2 font-medium">{scopeLabel}</span>
               <span className="pointer-events-none flex-1" />
-              <button
-                type="button"
-                title="Filter · F"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setFiltering(true)}
-                className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium ${
-                  activeFilters > 0
-                    ? "border-line-strong text-fg"
-                    : "border-line text-fg-tertiary hover:text-fg"
-                }`}
-              >
-                Filter
-                {activeFilters > 0 && <span className="font-mono text-[11px] text-fg-secondary">{activeFilters}</span>}
-              </button>
-              {view.kind === "board" && (
-                <div className="flex rounded-md border border-line p-px">
-                  {(["list", "board"] as const).map((option) => (
-                    <button
-                      key={option}
-                      type="button"
-                      title={`${option === "list" ? "List" : "Board"} view · ⌘B`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => setLayout(option)}
-                      className={`h-6 rounded px-2.5 text-[12px] font-medium ${
-                        layout === option ? "bg-surface-hover text-fg" : "text-fg-tertiary hover:text-fg"
-                      }`}
-                    >
-                      {option === "list" ? "List" : "Board"}
-                    </button>
-                  ))}
-                </div>
+              {view.kind !== "settings" && (
+                <>
+                  <button
+                    type="button"
+                    title="Filter · F"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setFiltering(true)}
+                    className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium ${
+                      activeFilters > 0
+                        ? "border-line-strong text-fg"
+                        : "border-line text-fg-tertiary hover:text-fg"
+                    }`}
+                  >
+                    Filter
+                    {activeFilters > 0 && <span className="font-mono text-[11px] text-fg-secondary">{activeFilters}</span>}
+                  </button>
+                  {view.kind === "board" && (
+                    <div className="flex rounded-md border border-line p-px">
+                      {(["list", "board"] as const).map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          title={`${option === "list" ? "List" : "Board"} view · ⌘B`}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => setLayout(option)}
+                          className={`h-6 rounded px-2.5 text-[12px] font-medium ${
+                            layout === option ? "bg-surface-hover text-fg" : "text-fg-tertiary hover:text-fg"
+                          }`}
+                        >
+                          {option === "list" ? "List" : "Board"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    title="New ticket · C"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setCreating("backlog")}
+                    className="ml-1 h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-on-accent hover:bg-accent-hover"
+                  >
+                    New ticket
+                  </button>
+                </>
               )}
-              <button
-                type="button"
-                title="New ticket · C"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setCreating("backlog")}
-                className="ml-1 h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-on-accent hover:bg-accent-hover"
-              >
-                New ticket
-              </button>
             </>
           )}
         </header>
 
-        {!openTicket && (
+        {!openTicket && view.kind !== "settings" && (
           <FilterBar
             filters={filters}
             onChange={setFilters}
@@ -405,7 +489,9 @@ function App() {
           />
         )}
 
-        {openTicket ? (
+        {view.kind === "settings" ? (
+          <SettingsPage onClose={toggleSettings} />
+        ) : openTicket ? (
           <TicketPage
             ticket={openTicket}
             boards={boards}
@@ -414,6 +500,7 @@ function App() {
             onStep={step}
             onMove={moveTicket}
             onDelete={setDeletingTicket}
+            onRestore={restore}
           />
         ) : showBoard && board ? (
           <Board
@@ -443,6 +530,7 @@ function App() {
             onCreate={setCreating}
             onMove={moveTicket}
             onDelete={setDeletingTicket}
+            onRestore={view.kind === "archive" ? restore : undefined}
             empty={empty}
           />
         )}

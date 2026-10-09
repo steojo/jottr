@@ -219,6 +219,7 @@ function TicketResult({ ticket, boards }: { ticket: Ticket; boards: Board[] }) {
         <span className="shrink-0 font-mono text-[11px] text-fg-tertiary">{ticketKey(ticket)}</span>
       )}
       <span className="flex-1 truncate">{ticket.title}</span>
+      {ticket.archivedAt !== null && <span className="shrink-0 text-[12px] text-fg-quaternary">Archived</span>}
       <span className="flex shrink-0 items-center gap-1.5 text-[12px] text-fg-tertiary">
         {board && <span className={`size-2 rounded-sm ${SWATCH_BG[board.color]}`} />}
         {board ? board.name : "Inbox"}

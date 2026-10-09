@@ -1,4 +1,5 @@
 import { keepPreviousData, MutationCache, QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import {
   commands,
@@ -8,6 +9,7 @@ import {
   type LabelPatch,
   type NewBoard,
   type NewTicket,
+  type Settings,
   type Status,
   type Ticket,
   type TicketPatch,
@@ -15,19 +17,21 @@ import {
 import { addDays, applyPatch, toDateKey, type Destination } from "./tickets";
 
 // Everything is local, so data is only stale when we change it ourselves.
-// My Focus and search span every board, so any change refreshes them.
+// My Focus, search and the Archive span every board, so any change refreshes them.
 export const queryClient: QueryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: Infinity, retry: false } },
   mutationCache: new MutationCache({
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["focus"] });
       void queryClient.invalidateQueries({ queryKey: ["search"] });
+      void queryClient.invalidateQueries({ queryKey: archiveKey });
     },
   }),
 });
 
 const boardsKey = ["boards"] as const;
 const ticketsKey = (boardId: string | null) => ["tickets", boardId ?? "inbox"] as const;
+const archiveKey = ["archive"] as const;
 
 export function useBoards() {
   return useQuery({ queryKey: boardsKey, queryFn: commands.listBoards });
@@ -68,11 +72,16 @@ export function useUpdateTicket() {
       qc.setQueryData<Ticket[]>(key, (list) =>
         list?.map((t) => (t.id === ticket.id ? applyPatch(t, patch, list) : t)),
       );
+      if (ticket.archivedAt !== null) {
+        // Edits show in the Archive at once; a status change takes the ticket out of it.
+        qc.setQueryData<Ticket[]>(archiveKey, (list) =>
+          list?.map((t) => (t.id === ticket.id ? applyPatch(t, patch, []) : t)).filter((t) => t.archivedAt !== null),
+        );
+      }
       return { key, previous };
     },
     onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
-    onSuccess: (saved, _vars, ctx) =>
-      qc.setQueryData<Ticket[]>(ctx.key, (list) => list?.map((t) => (t.id === saved.id ? saved : t))),
+    onSuccess: (saved) => storeCachedTicket(qc, saved),
   });
 }
 
@@ -94,10 +103,7 @@ export function useMoveTicket() {
       return { key, previous };
     },
     onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
-    onSuccess: (saved, { ticket }) =>
-      saved.boardId === ticket.boardId
-        ? patchCachedTicket(qc, saved.boardId, saved.id, () => saved)
-        : qc.setQueryData<Ticket[]>(ticketsKey(saved.boardId), (list) => (list ? [...list, saved] : list)),
+    onSuccess: (saved) => storeCachedTicket(qc, saved),
   });
 }
 
@@ -161,6 +167,14 @@ export function useRepositionTicket() {
 /** Replaces one ticket in its list's cache. */
 function patchCachedTicket(qc: QueryClient, boardId: string | null, id: string, change: (t: Ticket) => Ticket) {
   qc.setQueryData<Ticket[]>(ticketsKey(boardId), (list) => list?.map((t) => (t.id === id ? change(t) : t)));
+}
+
+/** Puts a saved ticket in its list's cache, adding it if it has just arrived (moved or restored). */
+function storeCachedTicket(qc: QueryClient, saved: Ticket) {
+  if (saved.archivedAt !== null) return;
+  qc.setQueryData<Ticket[]>(ticketsKey(saved.boardId), (list) =>
+    !list ? list : list.some((t) => t.id === saved.id) ? list.map((t) => (t.id === saved.id ? saved : t)) : [...list, saved],
+  );
 }
 
 /** `dueDate` is `YYYY-MM-DD`, or `null` to clear it. */
@@ -303,6 +317,8 @@ export function useDeleteTicket() {
       await qc.cancelQueries({ queryKey: key });
       const previous = qc.getQueryData<Ticket[]>(key);
       qc.setQueryData<Ticket[]>(key, (list) => list?.filter((t) => t.id !== ticket.id));
+      // A failed delete puts it back when the Archive refetches.
+      qc.setQueryData<Ticket[]>(archiveKey, (list) => list?.filter((t) => t.id !== ticket.id));
       return { key, previous };
     },
     onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
@@ -327,5 +343,67 @@ export function useSearch(query: string) {
     queryFn: () => commands.searchTickets(q),
     enabled: q.length > 0,
     placeholderData: keepPreviousData,
+  });
+}
+
+/** Archived tickets from every board and the Inbox. Only loaded while the Archive is showing. */
+export function useArchive(enabled: boolean) {
+  return useQuery({ queryKey: archiveKey, queryFn: commands.listArchived, enabled });
+}
+
+/** Brings a ticket back from the Archive to the top of its status group. */
+export function useRestoreTicket() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticket: Ticket) => commands.restoreTicket(ticket.id),
+    onMutate: async (ticket) => {
+      await qc.cancelQueries({ queryKey: archiveKey });
+      const previous = qc.getQueryData<Ticket[]>(archiveKey);
+      qc.setQueryData<Ticket[]>(archiveKey, (list) => list?.filter((t) => t.id !== ticket.id));
+      return { previous };
+    },
+    onError: (_error, _ticket, ctx) => ctx && qc.setQueryData(archiveKey, ctx.previous),
+    onSuccess: (saved) => storeCachedTicket(qc, saved),
+  });
+}
+
+const AUTO_ARCHIVE_EVERY_MS = 60 * 60 * 1000;
+
+/** Rust archives at launch; this keeps archiving hourly while the app stays open. */
+export function useAutoArchive() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void commands.autoArchive().then((archived) => {
+        if (archived === 0) return;
+        for (const queryKey of [["tickets"], archiveKey, ["search"]]) void qc.invalidateQueries({ queryKey });
+      });
+    }, AUTO_ARCHIVE_EVERY_MS);
+    return () => clearInterval(timer);
+  }, [qc]);
+}
+
+const settingsKey = ["settings"] as const;
+
+export function useSettings() {
+  return useQuery({ queryKey: settingsKey, queryFn: commands.getSettings });
+}
+
+/** Saving can archive tickets straight away, so ticket lists are refetched too. */
+export function useUpdateSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: Settings) => commands.updateSettings(settings),
+    onMutate: async (settings) => {
+      await qc.cancelQueries({ queryKey: settingsKey });
+      const previous = qc.getQueryData<Settings>(settingsKey);
+      qc.setQueryData(settingsKey, settings);
+      return { previous };
+    },
+    onError: (_error, _settings, ctx) => ctx && qc.setQueryData(settingsKey, ctx.previous),
+    onSuccess: (saved) => {
+      qc.setQueryData(settingsKey, saved);
+      void qc.invalidateQueries({ queryKey: ["tickets"] });
+    },
   });
 }

@@ -4,8 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::db::{new_id, now};
 use crate::models::{
-    Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Status, Ticket,
-    TicketPatch,
+    Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Settings, Status,
+    Ticket, TicketPatch,
 };
 
 pub type CmdResult<T> = Result<T, String>;
@@ -207,12 +207,13 @@ pub fn update_ticket(conn: &mut Connection, id: String, patch: TicketPatch) -> C
         .map_err(err)?;
     }
 
-    // A status change moves the ticket to the top of its new group.
+    // A status change moves the ticket to the top of its new group, and brings it
+    // back from the Archive.
     if let Some(new_status) = patch.status.filter(|s| *s != status) {
         let position = top_position(&tx, board_id.as_deref(), new_status)?;
         let completed_at = (new_status == Status::Done).then_some(ts);
         tx.execute(
-            "UPDATE tickets SET status = ?2, position = ?3, completed_at = ?4, updated_at = ?5
+            "UPDATE tickets SET status = ?2, position = ?3, completed_at = ?4, updated_at = ?5, archived_at = NULL
              WHERE id = ?1",
             params![id, new_status, position, completed_at, ts],
         )
@@ -450,8 +451,8 @@ fn parse_ticket_key(input: &str) -> Option<(String, i32)> {
     is_valid_key(&key.to_uppercase()).then(|| (key.to_uppercase(), number))
 }
 
-/// Tickets on every board and in the Inbox, best matches first. A ticket ID like
-/// `ENG-42` puts that ticket at the top.
+/// Tickets on every board, in the Inbox and in the Archive, best matches first. A ticket
+/// ID like `ENG-42` puts that ticket at the top; archived tickets come after the rest.
 pub fn search_tickets(conn: &Connection, query: String) -> CmdResult<Vec<Ticket>> {
     let mut results: Vec<Ticket> = Vec::new();
 
@@ -460,7 +461,7 @@ pub fn search_tickets(conn: &Connection, query: String) -> CmdResult<Vec<Ticket>
             .query_row(
                 &format!(
                     "SELECT {} FROM tickets t JOIN boards b ON b.id = t.board_id
-                     WHERE b.key = ?1 AND t.number = ?2 AND t.archived_at IS NULL",
+                     WHERE b.key = ?1 AND t.number = ?2",
                     Ticket::COLUMNS
                 ),
                 params![key, number],
@@ -478,8 +479,8 @@ pub fn search_tickets(conn: &Connection, query: String) -> CmdResult<Vec<Ticket>
                 "SELECT {} FROM tickets_fts f
                  JOIN tickets t ON t.id = f.ticket_id
                  LEFT JOIN boards b ON b.id = t.board_id
-                 WHERE tickets_fts MATCH ?1 AND t.archived_at IS NULL
-                 ORDER BY bm25(tickets_fts, 0.0, 10.0, 1.0)
+                 WHERE tickets_fts MATCH ?1
+                 ORDER BY t.archived_at IS NOT NULL, bm25(tickets_fts, 0.0, 10.0, 1.0)
                  LIMIT 50",
                 Ticket::COLUMNS
             ))
@@ -510,6 +511,84 @@ pub fn list_focus(conn: &Connection, due_by: String) -> CmdResult<Vec<Ticket>> {
         .map_err(err)?;
     let tickets = stmt.query_map([due_by], Ticket::from_row).map_err(err)?;
     tickets.collect::<Result<_, _>>().map_err(err)
+}
+
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Archived tickets from every board and the Inbox, most recently finished first.
+pub fn list_archived(conn: &Connection) -> CmdResult<Vec<Ticket>> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {} FROM tickets t LEFT JOIN boards b ON b.id = t.board_id
+             WHERE t.archived_at IS NOT NULL
+             ORDER BY t.completed_at DESC",
+            Ticket::COLUMNS
+        ))
+        .map_err(err)?;
+    let tickets = stmt.query_map([], Ticket::from_row).map_err(err)?;
+    tickets.collect::<Result<_, _>>().map_err(err)
+}
+
+/// If auto-archive is on, archives Done tickets finished at least `archive_after_days` ago.
+/// Returns how many it archived.
+pub fn auto_archive(conn: &Connection) -> CmdResult<i32> {
+    let settings = get_settings(conn)?;
+    if !settings.auto_archive {
+        return Ok(0);
+    }
+    let ts = now();
+    let archived = conn
+        .execute(
+            "UPDATE tickets SET archived_at = ?1
+             WHERE archived_at IS NULL AND status = 'done' AND completed_at <= ?2",
+            params![ts, ts - i64::from(settings.archive_after_days) * DAY_MS],
+        )
+        .map_err(err)?;
+    Ok(archived as i32)
+}
+
+/// Brings a ticket back from the Archive to the top of its status group. A Done ticket
+/// counts as just finished, so it isn't archived again straight away.
+pub fn restore_ticket(conn: &Connection, id: String) -> CmdResult<Ticket> {
+    let (board_id, status, archived_at): (Option<String>, Status, Option<i64>) = conn
+        .query_row("SELECT board_id, status, archived_at FROM tickets WHERE id = ?1", [&id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .optional()
+        .map_err(err)?
+        .ok_or_else(|| "Ticket not found".to_string())?;
+    if archived_at.is_none() {
+        return Err("Ticket isn't archived".into());
+    }
+    let position = top_position(conn, board_id.as_deref(), status)?;
+    conn.execute(
+        "UPDATE tickets
+         SET archived_at = NULL, position = ?2, updated_at = ?3,
+             completed_at = CASE WHEN status = 'done' THEN ?3 ELSE completed_at END
+         WHERE id = ?1",
+        params![id, position, now()],
+    )
+    .map_err(err)?;
+    get_ticket(conn, &id)
+}
+
+pub fn get_settings(conn: &Connection) -> CmdResult<Settings> {
+    conn.query_row(&format!("SELECT {} FROM settings WHERE id = 1", Settings::COLUMNS), [], Settings::from_row)
+        .map_err(err)
+}
+
+/// Saves the settings, then archives anything they now make due.
+pub fn update_settings(conn: &Connection, settings: Settings) -> CmdResult<Settings> {
+    if !(1..=365).contains(&settings.archive_after_days) {
+        return Err("Archive delay must be between 1 and 365 days".into());
+    }
+    conn.execute(
+        "UPDATE settings SET auto_archive = ?1, archive_after_days = ?2 WHERE id = 1",
+        params![settings.auto_archive, settings.archive_after_days],
+    )
+    .map_err(err)?;
+    auto_archive(conn)?;
+    get_settings(conn)
 }
 
 fn is_valid_date(date: &str) -> bool {
@@ -909,5 +988,74 @@ mod tests {
         assert_eq!(focus[0], "Due soon", "soonest due first");
         assert_eq!(focus.len(), 3);
         assert!(focus.contains(&"Working on it".to_string()) && focus.contains(&"Reviewing".to_string()));
+    }
+
+    /// Backdates a ticket's completion by `days`.
+    fn finished_days_ago(conn: &Connection, t: &Ticket, days: i64) {
+        conn.execute("UPDATE tickets SET completed_at = ?2 WHERE id = ?1", params![t.id, now() - days * DAY_MS])
+            .unwrap();
+    }
+
+    #[test]
+    fn auto_archive_moves_old_done_tickets_to_the_archive() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let old = titled(&mut conn, Some(&eng.id), "Old", Status::Done);
+        let recent = titled(&mut conn, Some(&eng.id), "Recent", Status::Done);
+        let open = titled(&mut conn, Some(&eng.id), "Open", Status::Backlog);
+        finished_days_ago(&conn, &old, 8);
+        finished_days_ago(&conn, &recent, 6);
+        finished_days_ago(&conn, &open, 30);
+
+        assert_eq!(auto_archive(&conn).unwrap(), 1);
+        let mut left = titles(list_tickets(&conn, Some(eng.id.clone())).unwrap());
+        left.sort();
+        assert_eq!(left, ["Open", "Recent"]);
+        assert_eq!(titles(list_archived(&conn).unwrap()), ["Old"]);
+        assert_eq!(titles(search_tickets(&conn, "old".into()).unwrap()), ["Old"], "archived tickets stay searchable");
+        assert_eq!(auto_archive(&conn).unwrap(), 0);
+    }
+
+    #[test]
+    fn settings_control_auto_archive() {
+        let mut conn = db();
+        let defaults = get_settings(&conn).unwrap();
+        assert!(defaults.auto_archive);
+        assert_eq!(defaults.archive_after_days, 7);
+
+        let t = titled(&mut conn, None, "Done", Status::Done);
+        finished_days_ago(&conn, &t, 3);
+        update_settings(&conn, Settings { auto_archive: false, archive_after_days: 1 }).unwrap();
+        assert_eq!(auto_archive(&conn).unwrap(), 0, "off");
+        assert!(list_archived(&conn).unwrap().is_empty());
+
+        let saved = update_settings(&conn, Settings { auto_archive: true, archive_after_days: 2 }).unwrap();
+        assert_eq!((saved.auto_archive, saved.archive_after_days), (true, 2));
+        assert_eq!(list_archived(&conn).unwrap().len(), 1, "saving archives anything now due");
+
+        assert!(update_settings(&conn, Settings { auto_archive: true, archive_after_days: 0 }).is_err());
+    }
+
+    #[test]
+    fn restoring_brings_tickets_back_with_a_fresh_delay() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let done = titled(&mut conn, Some(&eng.id), "Done", Status::Done);
+        let other = titled(&mut conn, Some(&eng.id), "Other", Status::Done);
+        finished_days_ago(&conn, &done, 10);
+        finished_days_ago(&conn, &other, 10);
+        auto_archive(&conn).unwrap();
+
+        let restored = restore_ticket(&conn, done.id.clone()).unwrap();
+        assert_eq!(restored.archived_at, None);
+        assert!(restored.completed_at.unwrap() > (now() - DAY_MS) as f64, "counts as just finished");
+        assert_eq!(auto_archive(&conn).unwrap(), 0, "not archived again straight away");
+        assert!(restore_ticket(&conn, done.id).is_err(), "already restored");
+
+        // Changing an archived ticket's status brings it back too.
+        let reopened = set_status(&mut conn, &other, Status::InProgress);
+        assert_eq!((reopened.archived_at, reopened.completed_at), (None, None));
+        assert!(list_archived(&conn).unwrap().is_empty());
+        assert_eq!(list_tickets(&conn, Some(eng.id)).unwrap().len(), 2);
     }
 }

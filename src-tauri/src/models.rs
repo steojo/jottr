@@ -122,6 +122,8 @@ pub struct Ticket {
     pub checklist_done: i32,
     pub checklist_total: i32,
     pub label_ids: Vec<String>,
+    /// Set while the ticket is in the Archive.
+    pub archived_at: Option<f64>,
 }
 
 impl Ticket {
@@ -130,7 +132,7 @@ impl Ticket {
          t.description, t.status, t.priority, t.due_date, t.position, t.completed_at, \
          (SELECT COUNT(*) FROM checklist_items c WHERE c.ticket_id = t.id AND c.done = 1), \
          (SELECT COUNT(*) FROM checklist_items c WHERE c.ticket_id = t.id), \
-         (SELECT GROUP_CONCAT(label_id) FROM ticket_labels l WHERE l.ticket_id = t.id)";
+         (SELECT GROUP_CONCAT(label_id) FROM ticket_labels l WHERE l.ticket_id = t.id), t.archived_at";
 
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Self {
@@ -153,6 +155,7 @@ impl Ticket {
                 .get::<_, Option<String>>(14)?
                 .map(|ids| ids.split(',').map(String::from).collect())
                 .unwrap_or_default(),
+            archived_at: row.get::<_, Option<i64>>(15)?.map(|ms| ms as f64),
         })
     }
 }
@@ -242,4 +245,20 @@ impl ChecklistItem {
 pub struct ChecklistPatch {
     pub text: Option<String>,
     pub done: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Settings {
+    /// Moves Done tickets to the Archive once they've been done for `archive_after_days`.
+    pub auto_archive: bool,
+    pub archive_after_days: i32,
+}
+
+impl Settings {
+    pub const COLUMNS: &'static str = "auto_archive, archive_after_days";
+
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self { auto_archive: row.get(0)?, archive_after_days: row.get(1)? })
+    }
 }

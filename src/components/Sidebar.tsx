@@ -5,8 +5,13 @@ import type { Board, Project } from "../bindings";
 import { SWATCH_BG } from "../lib/tickets";
 import { ChevronRightIcon, PlusIcon, ProjectIcon } from "./icons";
 
-/** The Inbox, My Focus, or a board optionally narrowed to one of its projects. */
-export type View = { kind: "inbox" } | { kind: "focus" } | { kind: "board"; boardId: string; projectId?: string };
+/** The Inbox, My Focus, a board optionally narrowed to one of its projects, the Archive, or Settings. */
+export type View =
+  | { kind: "inbox" }
+  | { kind: "focus" }
+  | { kind: "board"; boardId: string; projectId?: string }
+  | { kind: "archive" }
+  | { kind: "settings" };
 
 // Buttons don't take focus on click, so keyboard shortcuts keep working afterwards.
 const noFocus = (e: MouseEvent) => e.preventDefault();
@@ -19,7 +24,7 @@ const item = (active: boolean) =>
 const menuItem =
   "flex h-7 cursor-default items-center rounded-md px-2 text-fg-secondary outline-none select-none data-[highlighted]:bg-surface-hover data-[highlighted]:text-fg";
 
-/** PRD §6.7: Inbox, then boards that expand to show their projects. */
+/** PRD §6.7: Inbox, then boards that expand to show their projects, then Archive and Settings. */
 export function Sidebar({
   boards,
   projects,
@@ -163,6 +168,26 @@ export function Sidebar({
             <span className="text-fg-tertiary">New board</span>
           </button>
         )}
+      </nav>
+      <nav className="flex flex-col gap-px border-t border-line-subtle px-2 py-2">
+        <button
+          type="button"
+          title="Archive · G then A"
+          onMouseDown={noFocus}
+          onClick={() => onNavigate({ kind: "archive" })}
+          className={item(view.kind === "archive")}
+        >
+          Archive
+        </button>
+        <button
+          type="button"
+          title="Settings · ⌘,"
+          onMouseDown={noFocus}
+          onClick={() => onNavigate({ kind: "settings" })}
+          className={item(view.kind === "settings")}
+        >
+          Settings
+        </button>
       </nav>
     </aside>
   );

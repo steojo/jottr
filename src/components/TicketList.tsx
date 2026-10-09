@@ -32,6 +32,7 @@ export function TicketList({
   onCreate,
   onMove,
   onDelete,
+  onRestore,
   empty,
 }: {
   /** `undefined` while loading. */
@@ -46,8 +47,10 @@ export function TicketList({
   onCreate: (status: Status) => void;
   onMove: (ticket: Ticket, to: Destination) => void;
   onDelete: (ticket: Ticket) => void;
-  /** `hint` follows "Press C"; `action` replaces it, e.g. Clear filters. */
-  empty: { title: string; hint?: string; action?: { label: string; onClick: () => void } };
+  /** Set in the Archive. */
+  onRestore?: (ticket: Ticket) => void;
+  /** `hint` follows "Press C"; `detail` is plain text; `action` replaces the hint, e.g. Clear filters. */
+  empty: { title: string; hint?: string; detail?: string; action?: { label: string; onClick: () => void } };
 }) {
   // Keyboard focus ring only shows after keyboard navigation, never after a click.
   const [keyboard, setKeyboard] = useState(false);
@@ -115,6 +118,7 @@ export function TicketList({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2">
         <p className="text-[15px] font-semibold">{empty.title}</p>
+        {empty.detail && <p className="text-fg-tertiary">{empty.detail}</p>}
         {empty.action ? (
           <button
             type="button"
@@ -125,9 +129,11 @@ export function TicketList({
             {empty.action.label}
           </button>
         ) : (
-          <p className="flex items-center gap-1.5 text-fg-tertiary">
-            Press <Kbd>C</Kbd> {empty.hint}
-          </p>
+          empty.hint && (
+            <p className="flex items-center gap-1.5 text-fg-tertiary">
+              Press <Kbd>C</Kbd> {empty.hint}
+            </p>
+          )
         )}
       </div>
     );
@@ -171,6 +177,7 @@ export function TicketList({
               onPriority={(priority) => update.mutate({ ticket, patch: patch({ priority }) })}
               onMove={(to) => onMove(ticket, to)}
               onDelete={() => onDelete(ticket)}
+              onRestore={onRestore && (() => onRestore(ticket))}
             >
               <TicketRow
                 ticket={ticket}

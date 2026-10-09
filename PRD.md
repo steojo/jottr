@@ -160,10 +160,15 @@ Standard views:
 - Native macOS notifications when a ticket is due or overdue.
 
 ### 5.8 Auto-archive
-- Done tickets are automatically archived after a set number of days to keep boards clean.
-- **Can be turned on or off** in settings. One global setting for all boards.
-- Default delay: **7 days** (configurable).
-- Archived tickets remain searchable and can be restored.
+- Done tickets are automatically archived after a set number of days to keep boards clean. Canceled tickets aren't archived.
+- **Can be turned on or off** in settings (§5.14). One global setting for all boards.
+- Default delay: **7 days**, counted from when the ticket was marked Done. Settings offers 1, 3, 7, 14 or 30 days.
+- Runs when the app opens, every hour while it's open, and straight after the settings change.
+- **Archive view** (`G A`, or Archive at the bottom of the sidebar): archived tickets from every board and the Inbox, grouped by the month they were finished, newest first. Filters work as in any list.
+- Archived tickets remain searchable. Search lists them after the rest, marked "Archived", and opening one shows it in the Archive.
+- **Restoring** (`A`, the right-click menu, or Restore on the ticket page) puts a ticket back at the top of its status group on its board. A restored Done ticket counts as just finished, so it gets a fresh delay before it's archived again.
+- Changing an archived ticket's status also restores it. Other edits leave it in the Archive.
+- An open ticket that's restored goes back to its board and stays open.
 
 ### 5.9 Export & backup
 - One-click export or backup of all data to a file.
@@ -183,6 +188,12 @@ Standard views:
 - `L` opens the label picker: type to filter, `Enter` adds or removes the highlighted label, and it stays open for more. Typing a new name offers to create it, using the first colour not yet taken.
 - Right-click a label in the picker to change its colour, rename it, or delete it. Deleting removes it from every ticket, after a confirmation.
 - The right-click menu on a ticket has a Labels submenu that stays open while you tick several.
+
+### 5.14 Settings
+- `⌘,` or Settings at the bottom of the sidebar opens a settings page in the main area. `Esc` or `⌘,` goes back to where you were.
+- Settings are stored in SQLite with the rest of the data. Per-board UI preferences (layout, collapsed columns) aren't settings; they're remembered automatically.
+- **Archive:** Auto-archive on or off, and Archive after (the delay; see §5.8).
+- Controls are reached with `Tab` and changed with `Space` or `Enter`.
 
 ## 6. UI & Design Principles
 
@@ -299,6 +310,7 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 | `M` | Move to board / project |
 | `R` | Repeat |
 | `⌘⇧C` | Copy ticket ID |
+| `A` | Restore from the Archive |
 | `⌘⌫` | Delete (asks to confirm) |
 
 **In a list or board**
@@ -357,6 +369,7 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 - **Boards:** each board is shown with its colour dot. Expand a board to see its projects. Expanded state is remembered.
 - Clicking a board shows all its tickets; clicking a project shows only that project's tickets.
 - Hover a board for **+** to add a project. Right-click a project to rename or delete it. Deleting keeps its tickets on the board, without a project.
+- **Bottom:** Archive and Settings.
 - Toggle with `⌘\`.
 
 ### 6.8 Ticket page

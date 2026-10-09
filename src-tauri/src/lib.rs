@@ -37,6 +37,11 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::add_checklist_item,
             commands::update_checklist_item,
             commands::delete_checklist_item,
+            commands::list_archived,
+            commands::auto_archive,
+            commands::restore_ticket,
+            commands::get_settings,
+            commands::update_settings,
         ])
 }
 
@@ -60,6 +65,10 @@ pub fn run() {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let conn = db::open(&dir.join("jottr.db"))?;
+            // Archive before the first list loads, so old Done tickets never flash up.
+            if let Err(e) = store::auto_archive(&conn) {
+                eprintln!("auto-archive failed: {e}");
+            }
             app.manage(db::Db(Mutex::new(conn)));
             Ok(())
         })

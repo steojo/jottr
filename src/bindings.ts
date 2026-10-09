@@ -42,6 +42,15 @@ export const commands = {
 	addChecklistItem: (ticketId: string, text: string) => __TAURI_INVOKE<ChecklistItem>("add_checklist_item", { ticketId, text }),
 	updateChecklistItem: (id: string, patch: ChecklistPatch) => __TAURI_INVOKE<ChecklistItem>("update_checklist_item", { id, patch }),
 	deleteChecklistItem: (id: string) => __TAURI_INVOKE<null>("delete_checklist_item", { id }),
+	/**  Archived tickets from every board and the Inbox, most recently finished first. */
+	listArchived: () => __TAURI_INVOKE<Ticket[]>("list_archived"),
+	/**  Archives Done tickets that are due, if auto-archive is on. Returns how many it archived. */
+	autoArchive: () => __TAURI_INVOKE<number>("auto_archive"),
+	/**  Brings a ticket back from the Archive to the top of its status group. */
+	restoreTicket: (id: string) => __TAURI_INVOKE<Ticket>("restore_ticket", { id }),
+	getSettings: () => __TAURI_INVOKE<Settings>("get_settings"),
+	/**  Saves the settings, then archives anything they now make due. */
+	updateSettings: (settings: Settings) => __TAURI_INVOKE<Settings>("update_settings", { settings }),
 };
 
 /* Types */
@@ -104,6 +113,12 @@ export type Project = {
 	name: string,
 };
 
+export type Settings = {
+	/**  Moves Done tickets to the Archive once they've been done for `archive_after_days`. */
+	autoArchive: boolean,
+	archiveAfterDays: number,
+};
+
 export type Status = "backlog" | "ready" | "in_progress" | "in_review" | "done" | "canceled";
 
 export type Ticket = {
@@ -122,6 +137,8 @@ export type Ticket = {
 	checklistDone: number,
 	checklistTotal: number,
 	labelIds: string[],
+	/**  Set while the ticket is in the Archive. */
+	archivedAt: number | null,
 };
 
 /**  Fields left as `None` are unchanged. */

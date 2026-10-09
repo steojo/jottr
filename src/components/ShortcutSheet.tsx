@@ -11,6 +11,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
       ["F", "Filter"],
       ["⌘ B", "List / board view"],
       ["⌘ \\", "Toggle sidebar"],
+      ["⌘ ,", "Settings"],
       ["?", "Keyboard shortcuts"],
     ],
   },
@@ -21,6 +22,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
       ["G F", "My Focus"],
       ["G B", "Board…"],
       ["G P", "Project…"],
+      ["G A", "Archive"],
     ],
   },
   {
@@ -33,6 +35,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
       ["D", "Due date"],
       ["M", "Move to board or project"],
       ["[  ]", "Previous / next status"],
+      ["A", "Restore from the Archive"],
       ["⌘ ⇧ C", "Copy ID"],
       ["⌘ ⌫", "Delete"],
     ],

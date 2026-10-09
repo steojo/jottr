@@ -13,6 +13,9 @@ const item =
   "data-[disabled]:text-fg-quaternary data-[highlighted]:bg-surface-hover data-[highlighted]:text-fg " +
   "data-[state=open]:bg-surface-hover data-[state=open]:text-fg";
 
+/** Shared with other menus so they all look alike. */
+export { panel as menuPanel, item as menuItem };
+
 /**
  * Right-click menu for a ticket (PRD §6.4). Mirrors the S / P / M pickers,
  * with each option's icon and a tick on the current value.
@@ -26,6 +29,7 @@ export function TicketMenu({
   onPriority,
   onMove,
   onDelete,
+  onRestore,
   children,
 }: {
   ticket: Ticket;
@@ -36,6 +40,8 @@ export function TicketMenu({
   onPriority: (priority: Priority) => void;
   onMove: (to: Destination) => void;
   onDelete: () => void;
+  /** Shown for archived tickets. */
+  onRestore?: () => void;
   children: ReactNode;
 }) {
   const destinations = moveDestinations(ticket, boards, projects);
@@ -48,6 +54,16 @@ export function TicketMenu({
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content className={panel} onCloseAutoFocus={(e) => e.preventDefault()}>
+          {onRestore && (
+            <>
+              <ContextMenu.Item className={item} onSelect={onRestore}>
+                <span className="size-3.5" />
+                <span className="flex-1">Restore</span>
+                <Kbd>A</Kbd>
+              </ContextMenu.Item>
+              <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
+            </>
+          )}
           <Submenu icon={<StatusIcon status={ticket.status} />} label="Status" shortcut="S">
             {STATUSES.map((s) => (
               <Option

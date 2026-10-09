@@ -102,7 +102,8 @@ export function patch(fields: Partial<TicketPatch>): TicketPatch {
   return { title: null, description: null, status: null, priority: null, ...fields };
 }
 
-/** Mirrors `update_ticket` in Rust so optimistic updates match the server. */
+/** Mirrors `update_ticket` in Rust so optimistic updates match the server. A status change
+ * also brings the ticket back from the Archive. */
 export function applyPatch(ticket: Ticket, p: TicketPatch, siblings: Ticket[]): Ticket {
   const next = { ...ticket };
   if (p.title !== null) next.title = p.title.trim();
@@ -113,6 +114,7 @@ export function applyPatch(ticket: Ticket, p: TicketPatch, siblings: Ticket[]): 
     next.status = p.status;
     next.position = (group.length ? Math.min(...group) : 1) - 1;
     next.completedAt = p.status === "done" ? Date.now() : null;
+    next.archivedAt = null;
   }
   return next;
 }
@@ -236,6 +238,24 @@ export function focusGroups(tickets: Ticket[]): TicketGroup[] {
     { status: null, label: "In progress", tickets: active.sort(byPosition) },
   ].filter((g) => g.tickets.length > 0);
 }
+
+/** The Archive, grouped by the month each ticket was finished, newest first. */
+export function archiveGroups(tickets: Ticket[]): TicketGroup[] {
+  const sorted = [...tickets].sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+  const groups: TicketGroup[] = [];
+  for (const t of sorted) {
+    const label = t.completedAt
+      ? new Date(t.completedAt).toLocaleDateString("en-US", { month: "long", year: "numeric" })
+      : "Earlier";
+    const last = groups[groups.length - 1];
+    if (last?.label === label) last.tickets.push(t);
+    else groups.push({ status: null, label, tickets: [t] });
+  }
+  return groups;
+}
+
+/** "1 day", "7 days". */
+export const dayCount = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
 
 /** Narrowing the current view. Within a kind, any match counts; across kinds, all must match. */
 export type Filters = { priorities: Priority[]; labelIds: string[]; projectIds: string[] };

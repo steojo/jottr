@@ -21,6 +21,7 @@ export function TicketPage({
   onStep,
   onMove,
   onDelete,
+  onRestore,
 }: {
   ticket: Ticket;
   boards: Board[];
@@ -30,6 +31,7 @@ export function TicketPage({
   onStep: (delta: 1 | -1) => void;
   onMove: (ticket: Ticket, to: Destination) => void;
   onDelete: (ticket: Ticket) => void;
+  onRestore: (ticket: Ticket) => void;
 }) {
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const update = useUpdateTicket();
@@ -53,6 +55,23 @@ export function TicketPage({
       <div className="flex-1 overflow-y-auto">
         {/* Keyed by ticket so moving with J/K remounts the editors, saving any pending edits. */}
         <div key={ticket.id} className="mx-auto flex max-w-[720px] flex-col gap-6 px-10 pt-8 pb-24">
+          {ticket.archivedAt !== null && (
+            <div className="flex h-9 items-center gap-2 rounded-md border border-line-subtle pr-1 pl-3 text-fg-secondary">
+              <span className="flex-1">
+                Archived on{" "}
+                {new Date(ticket.archivedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+              </span>
+              <button
+                type="button"
+                title="Restore · A"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onRestore(ticket)}
+                className="h-7 rounded-md px-2.5 font-medium text-fg hover:bg-surface-hover"
+              >
+                Restore
+              </button>
+            </div>
+          )}
           <Title ticket={ticket} onSave={(title) => update.mutate({ ticket, patch: patch({ title }) })} />
           <Suspense fallback={<p className="description text-fg-tertiary">{ticket.description || "Add a description…"}</p>}>
             <DescriptionEditor
