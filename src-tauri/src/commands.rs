@@ -155,3 +155,10 @@ pub async fn set_ticket_label(
 ) -> CmdResult<Ticket> {
     store::set_ticket_label(&*db.0.lock().map_err(err)?, ticket_id, label_id, applied)
 }
+
+/// Permanently deletes a ticket with its checklist and labels.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_ticket(db: State<'_, Db>, id: String) -> CmdResult<()> {
+    store::delete_ticket(&*db.0.lock().map_err(err)?, id)
+}

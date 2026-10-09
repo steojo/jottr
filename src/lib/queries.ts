@@ -285,3 +285,20 @@ export function useSetTicketLabel() {
     onSuccess: (saved) => patchCachedTicket(qc, saved.boardId, saved.id, () => saved),
   });
 }
+
+/** Permanently deletes a ticket; the UI asks first, since there's no undo. */
+export function useDeleteTicket() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticket: Ticket) => commands.deleteTicket(ticket.id),
+    onMutate: async (ticket) => {
+      const key = ticketsKey(ticket.boardId);
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<Ticket[]>(key);
+      qc.setQueryData<Ticket[]>(key, (list) => list?.filter((t) => t.id !== ticket.id));
+      return { key, previous };
+    },
+    onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
+    onSuccess: (_result, ticket) => qc.removeQueries({ queryKey: checklistKey(ticket.id) }),
+  });
+}

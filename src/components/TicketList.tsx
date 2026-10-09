@@ -31,6 +31,7 @@ export function TicketList({
   onOpen,
   onCreate,
   onMove,
+  onDelete,
   empty,
 }: {
   /** `undefined` while loading. */
@@ -44,6 +45,7 @@ export function TicketList({
   onOpen: (ticket: Ticket) => void;
   onCreate: (status: Status) => void;
   onMove: (ticket: Ticket, to: Destination) => void;
+  onDelete: (ticket: Ticket) => void;
   empty: { title: string; hint: string };
 }) {
   // Keyboard focus ring only shows after keyboard navigation, never after a click.
@@ -149,7 +151,8 @@ export function TicketList({
               onOpen={() => select(ticket)}
               onStatus={(status) => update.mutate({ ticket, patch: patch({ status }) })}
               onPriority={(priority) => update.mutate({ ticket, patch: patch({ priority }) })}
-              onMove={(boardId) => onMove(ticket, boardId)}
+              onMove={(to) => onMove(ticket, to)}
+              onDelete={() => onDelete(ticket)}
             >
               <TicketRow
                 ticket={ticket}

@@ -260,6 +260,15 @@ pub fn move_ticket(
     get_ticket(conn, &id)
 }
 
+/// Permanently deletes a ticket with its checklist and labels. The UI confirms first.
+pub fn delete_ticket(conn: &Connection, id: String) -> CmdResult<()> {
+    let deleted = conn.execute("DELETE FROM tickets WHERE id = ?1", [id]).map_err(err)?;
+    if deleted == 0 {
+        return Err("Ticket not found".into());
+    }
+    Ok(())
+}
+
 /// Places a ticket at an exact status and position, e.g. after a drag and drop.
 /// Entering Done stamps `completed_at`; leaving it clears it.
 pub fn reposition_ticket(conn: &Connection, id: String, status: Status, position: f64) -> CmdResult<Ticket> {
@@ -746,5 +755,22 @@ mod tests {
         delete_label(&conn, bug.id).unwrap();
         assert!(list_tickets(&conn, None).unwrap()[0].label_ids.is_empty());
         assert_eq!(list_labels(&conn).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn deleting_a_ticket_removes_its_checklist_and_labels() {
+        let mut conn = db();
+        let t = ticket(&mut conn, None, Status::Backlog);
+        add_checklist_item(&conn, t.id.clone(), "Step".into()).unwrap();
+        let bug = create_label(&conn, "bug".into(), Color::Red).unwrap();
+        set_ticket_label(&conn, t.id.clone(), bug.id.clone(), true).unwrap();
+
+        delete_ticket(&conn, t.id.clone()).unwrap();
+        assert!(list_tickets(&conn, None).unwrap().is_empty());
+        assert!(list_checklist(&conn, t.id.clone()).unwrap().is_empty());
+        let links: i64 = conn.query_row("SELECT COUNT(*) FROM ticket_labels", [], |r| r.get(0)).unwrap();
+        assert_eq!(links, 0);
+        assert_eq!(list_labels(&conn).unwrap().len(), 1, "the label itself stays");
+        assert!(delete_ticket(&conn, t.id).is_err());
     }
 }

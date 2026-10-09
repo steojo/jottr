@@ -20,6 +20,7 @@ export function TicketPage({
   onClose,
   onStep,
   onMove,
+  onDelete,
 }: {
   ticket: Ticket;
   boards: Board[];
@@ -28,6 +29,7 @@ export function TicketPage({
   /** Opens the next (1) or previous (-1) ticket in the list. */
   onStep: (delta: 1 | -1) => void;
   onMove: (ticket: Ticket, to: Destination) => void;
+  onDelete: (ticket: Ticket) => void;
 }) {
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const update = useUpdateTicket();
@@ -108,6 +110,15 @@ export function TicketPage({
             )}
           </Property>
         )}
+        <button
+          type="button"
+          title="Delete ticket · ⌘⌫"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onDelete(ticket)}
+          className="mt-auto flex h-8 items-center rounded-md px-2 text-left text-fg-tertiary hover:bg-surface-hover hover:text-status-error"
+        >
+          Delete ticket
+        </button>
       </aside>
 
       <TicketPickers ticket={ticket} boards={boards} projects={projects} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />

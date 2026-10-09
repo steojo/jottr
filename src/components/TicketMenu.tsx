@@ -25,6 +25,7 @@ export function TicketMenu({
   onStatus,
   onPriority,
   onMove,
+  onDelete,
   children,
 }: {
   ticket: Ticket;
@@ -34,6 +35,7 @@ export function TicketMenu({
   onStatus: (status: Status) => void;
   onPriority: (priority: Priority) => void;
   onMove: (to: Destination) => void;
+  onDelete: () => void;
   children: ReactNode;
 }) {
   const destinations = moveDestinations(ticket, boards, projects);
@@ -81,6 +83,12 @@ export function TicketMenu({
               />
             ))}
           </Submenu>
+          <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <ContextMenu.Item className={`${item} data-[highlighted]:text-status-error`} onSelect={onDelete}>
+            <span className="size-3.5" />
+            <span className="flex-1">Delete…</span>
+            <Kbd>⌘⌫</Kbd>
+          </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>

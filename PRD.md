@@ -169,14 +169,18 @@ Standard views:
 ### 5.10 Attachments
 - Attach files and images to tickets.
 
-### 5.12 Labels
+### 5.11 Multi-select & bulk edit (later)
+- Select multiple tickets in the list or board (`X` to select, `⌘A` to select all).
+- Change status, priority, labels, project or due date for all selected tickets at once, using the same shortcuts as for a single ticket.
+
+### 5.12 Deleting tickets
+- `⌘⌫`, the right-click menu, or the ticket page's **Delete ticket** button. Each asks to confirm, since there's no undo.
+- Deleting removes the ticket's checklist and labels too. The selection moves to the next ticket, and an open ticket returns you to the list.
+
+### 5.13 Labels
 - `L` opens the label picker: type to filter, `Enter` adds or removes the highlighted label, and it stays open for more. Typing a new name offers to create it, using the first colour not yet taken.
 - Right-click a label in the picker to change its colour, rename it, or delete it. Deleting removes it from every ticket, after a confirmation.
 - The right-click menu on a ticket has a Labels submenu that stays open while you tick several.
-
-### 5.11 Multi-select & bulk edit
-- Select multiple tickets in the list or board (`X` to select, `⌘A` to select all).
-- Change status, priority, labels, project or due date for all selected tickets at once, using the same shortcuts as for a single ticket.
 
 ## 6. UI & Design Principles
 
@@ -269,7 +273,6 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 | `⌘B` | Toggle list / board view |
 | `⌘\` | Toggle sidebar |
 | `⌘,` | Settings |
-| `⌘Z` / `⌘⇧Z` | Undo / redo |
 | `⌘[` / `⌘]` | Back / forward |
 | `?` | Show all shortcuts |
 
@@ -294,7 +297,7 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 | `M` | Move to board / project |
 | `R` | Repeat |
 | `⌘⇧C` | Copy ticket ID |
-| `⌘⌫` | Delete (undoable) |
+| `⌘⌫` | Delete (asks to confirm) |
 
 **In a list or board**
 
@@ -391,6 +394,7 @@ Every view has a designed version of each state:
 - Analytics / reports
 - Assignees, teams, comments
 - Light mode (planned later as a token swap; see §6.1)
+- Undo / redo. Deleting asks to confirm instead.
 - Mac App Store distribution (see §2.4)
 - Code signing, notarization and auto-updates (later, if shared; see §2.4)
 

@@ -30,6 +30,8 @@ export const commands = {
 	moveTicket: (id: string, boardId: string | null, projectId: string | null) => __TAURI_INVOKE<Ticket>("move_ticket", { id, boardId, projectId }),
 	/**  Places a ticket at an exact status and position, e.g. after a drag and drop. */
 	repositionTicket: (id: string, status: Status, position: number | null) => __TAURI_INVOKE<Ticket>("reposition_ticket", { id, status, position }),
+	/**  Permanently deletes a ticket with its checklist and labels. */
+	deleteTicket: (id: string) => __TAURI_INVOKE<null>("delete_ticket", { id }),
 	/**  `due_date` is `YYYY-MM-DD`, or `None` to clear it. */
 	setDueDate: (id: string, dueDate: string | null) => __TAURI_INVOKE<Ticket>("set_due_date", { id, dueDate }),
 	listChecklist: (ticketId: string) => __TAURI_INVOKE<ChecklistItem[]>("list_checklist", { ticketId }),

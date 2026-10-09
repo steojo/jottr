@@ -14,6 +14,7 @@ import {
   useBoards,
   useCreateProject,
   useDeleteProject,
+  useDeleteTicket,
   useMoveTicket,
   useProjects,
   useRenameProject,
@@ -36,6 +37,7 @@ function App() {
   const [switchingProject, setSwitchingProject] = useState(false);
   const [naming, setNaming] = useState<{ boardId: string } | { project: Project } | null>(null);
   const [deleting, setDeleting] = useState<Project | null>(null);
+  const [deletingTicket, setDeletingTicket] = useState<Ticket | null>(null);
   const [expanded, setExpanded] = usePersistentState<string[]>("jottr.sidebar.expanded", []);
 
   const boards = useBoards().data ?? [];
@@ -51,6 +53,7 @@ function App() {
   const createProject = useCreateProject();
   const renameProject = useRenameProject();
   const deleteProject = useDeleteProject();
+  const removeTicket = useDeleteTicket();
   const inboxCount = useTickets(null).data?.length ?? 0;
   const move = useMoveTicket();
   // Each board remembers list or board layout; the Inbox is always a list.
@@ -102,8 +105,20 @@ function App() {
     }
   }
 
+  function deleteTicket(ticket: Ticket) {
+    // The selection passes to a neighbour; an open ticket returns you to the list.
+    const i = order.findIndex((t) => t.id === ticket.id);
+    removeTicket.mutate(ticket);
+    if (ticket.id === openId) setOpenId(null);
+    if (ticket.id === activeId || ticket.id === openId) setActiveId((order[i + 1] ?? order[i - 1])?.id ?? null);
+  }
+
   useShortcuts({
     c: () => setCreating("backlog"),
+    "mod+backspace": () => {
+      const target = openTicket ?? order.find((t) => t.id === activeId);
+      if (target) setDeletingTicket(target);
+    },
     "g i": () => navigate({ kind: "inbox" }),
     "g b": () => boards.length > 0 && setSwitchingBoard(true),
     "g p": () => projects.some((p) => p.boardId === board?.id) && setSwitchingProject(true),
@@ -215,6 +230,7 @@ function App() {
             onClose={() => setOpenId(null)}
             onStep={step}
             onMove={moveTicket}
+            onDelete={setDeletingTicket}
           />
         ) : showBoard && board ? (
           <Board
@@ -229,6 +245,7 @@ function App() {
             onOpen={open}
             onCreate={setCreating}
             onMove={moveTicket}
+            onDelete={setDeletingTicket}
           />
         ) : (
           <TicketList
@@ -242,6 +259,7 @@ function App() {
             onOpen={open}
             onCreate={setCreating}
             onMove={moveTicket}
+            onDelete={setDeletingTicket}
             empty={
               project
                 ? { title: "No tickets in this project", hint: "to create one" }
@@ -300,6 +318,14 @@ function App() {
           setExpanded((ids) => (ids.includes(created.boardId) ? ids : [...ids, created.boardId]));
           navigate({ kind: "board", boardId: created.boardId, projectId: created.id });
         }}
+      />
+      <ConfirmDialog
+        open={deletingTicket !== null}
+        title={`Delete ${deletingTicket ? (ticketKey(deletingTicket) ?? `“${deletingTicket.title}”`) : "ticket"}?`}
+        message="It'll be gone for good, along with its checklist."
+        confirmLabel="Delete"
+        onClose={() => setDeletingTicket(null)}
+        onConfirm={() => deletingTicket && deleteTicket(deletingTicket)}
       />
       <ConfirmDialog
         open={deleting !== null}
