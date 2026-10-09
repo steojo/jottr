@@ -1,10 +1,11 @@
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Board, Project, Ticket } from "../bindings";
-import { useUpdateTicket } from "../lib/queries";
+import { useLabels, useUpdateTicket } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
 import { PRIORITIES, SWATCH_BG, formatDue, isOverdue, patch, statusLabel, type Destination } from "../lib/tickets";
 import { Checklist } from "./Checklist";
+import { LabelChip } from "./Labels";
 import { PriorityIcon, ProjectIcon, StatusIcon } from "./icons";
 import { TicketPickers, type PickerKind } from "./TicketPickers";
 import { Kbd } from "./ui";
@@ -32,6 +33,7 @@ export function TicketPage({
   const update = useUpdateTicket();
   const board = boards.find((b) => b.id === ticket.boardId);
   const project = projects.find((p) => p.id === ticket.projectId);
+  const labels = (useLabels().data ?? []).filter((l) => ticket.labelIds.includes(l.id));
 
   useShortcuts({
     escape: onClose,
@@ -40,6 +42,7 @@ export function TicketPage({
     s: () => setPicker("status"),
     p: () => setPicker("priority"),
     d: () => setPicker("due"),
+    l: () => setPicker("labels"),
     m: () => setPicker("move"),
   });
 
@@ -68,6 +71,17 @@ export function TicketPage({
         <Property label="Priority" shortcut="P" onClick={() => setPicker("priority")}>
           <PriorityIcon priority={ticket.priority} />
           {PRIORITIES.find((p) => p.value === ticket.priority)!.label}
+        </Property>
+        <Property label="Labels" shortcut="L" onClick={() => setPicker("labels")}>
+          {labels.length > 0 ? (
+            <span className="flex flex-wrap justify-end gap-1 py-1">
+              {labels.map((l) => (
+                <LabelChip key={l.id} label={l} />
+              ))}
+            </span>
+          ) : (
+            <span className="text-fg-quaternary">None</span>
+          )}
         </Property>
         <Property label="Due date" shortcut="D" onClick={() => setPicker("due")}>
           {ticket.dueDate ? (
@@ -119,10 +133,10 @@ function Property({
       title={`Change ${label.toLowerCase()} · ${shortcut}`}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className="group flex h-8 items-center gap-2 rounded-md px-2 text-left hover:bg-surface-hover"
+      className="group flex min-h-8 items-center gap-2 rounded-md px-2 text-left hover:bg-surface-hover"
     >
       <span className="w-16 shrink-0 text-fg-tertiary">{label}</span>
-      <span className="flex min-w-0 flex-1 items-center justify-end gap-2 truncate">{children}</span>
+      <span className="flex min-w-0 flex-1 items-center justify-end gap-2 overflow-hidden">{children}</span>
       <span className="hidden group-hover:inline-flex">
         <Kbd>{shortcut}</Kbd>
       </span>

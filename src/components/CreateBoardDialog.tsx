@@ -1,8 +1,8 @@
 import { useState } from "react";
 
-import type { Board, BoardColor } from "../bindings";
+import type { Board, Color } from "../bindings";
 import { useCreateBoard } from "../lib/queries";
-import { BOARD_COLORS, SWATCH_BG, suggestKey } from "../lib/tickets";
+import { COLORS, SWATCH_BG, suggestKey } from "../lib/tickets";
 import { Dialog, Kbd } from "./ui";
 
 export function CreateBoardDialog({
@@ -17,7 +17,7 @@ export function CreateBoardDialog({
   const [name, setName] = useState("");
   // The key follows the name until it's edited by hand.
   const [customKey, setCustomKey] = useState<string | null>(null);
-  const [color, setColor] = useState<BoardColor>("blue");
+  const [color, setColor] = useState<Color>("blue");
   const create = useCreateBoard();
   const key = customKey ?? suggestKey(name);
 
@@ -78,7 +78,7 @@ export function CreateBoardDialog({
           <div className="flex flex-col gap-1.5 text-fg-secondary">
             Colour
             <div className="flex gap-2">
-              {BOARD_COLORS.map((c) => (
+              {COLORS.map((c) => (
                 <button
                   key={c}
                   type="button"

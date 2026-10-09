@@ -42,6 +42,7 @@ Rust owns all data; the UI never touches the database directly.
   - New tickets and status changes go to the top of their status group (`MIN(position) - 1`).
   - Setting `done` stamps `completed_at`.
 - **UI data (`src/lib/queries.ts`):** TanStack Query, with `staleTime: Infinity` since all data is local. Mutations update the cache optimistically and roll back on error. `applyPatch` in `src/lib/tickets.ts` mirrors `update_ticket` and must stay in sync with it.
+- **Labels** are global (not per board). `Ticket.labelIds` comes from a `GROUP_CONCAT` subquery in `Ticket::COLUMNS`, and the UI resolves names and colours from `useLabels()`. `set_ticket_label` adds or removes one label at a time.
 - **Projects** are a filter over a board's tickets: a project view (`View.projectId`) shows the board's cached tickets filtered by `projectId`. `move_ticket` sets board and project together and rejects a project from another board. `moveDestinations` in `src/lib/tickets.ts` builds the destination list for both the `M` picker and the right-click menu.
 - **Views:** `App.tsx` owns the current scope (Inbox, a board, or a project), the selected ticket (`activeId`) and the open ticket (`openId`). With a ticket open, `TicketPage` replaces `TicketList`, and both share `TicketPickers` for the S/P/D/M pickers. `groupTickets` in `src/lib/tickets.ts` defines the list order that J/K follow.
 - **Board view (`Board.tsx`):** dnd-kit (`@dnd-kit/core` + `sortable`).

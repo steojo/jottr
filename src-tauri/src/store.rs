@@ -4,7 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::db::{new_id, now};
 use crate::models::{
-    Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Project, Status, Ticket, TicketPatch,
+    Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Status, Ticket,
+    TicketPatch,
 };
 
 pub type CmdResult<T> = Result<T, String>;
@@ -347,6 +348,83 @@ pub fn delete_project(conn: &Connection, id: String) -> CmdResult<()> {
     Ok(())
 }
 
+pub fn list_labels(conn: &Connection) -> CmdResult<Vec<Label>> {
+    let mut stmt = conn
+        .prepare(&format!("SELECT {} FROM labels ORDER BY name", Label::COLUMNS))
+        .map_err(err)?;
+    let labels = stmt.query_map([], Label::from_row).map_err(err)?;
+    labels.collect::<Result<_, _>>().map_err(err)
+}
+
+fn get_label(conn: &Connection, id: &str) -> CmdResult<Label> {
+    conn.query_row(&format!("SELECT {} FROM labels WHERE id = ?1", Label::COLUMNS), [id], Label::from_row)
+        .map_err(err)
+}
+
+/// Turns a uniqueness violation into a readable message; names are unique ignoring case.
+fn label_error(name: &str) -> impl Fn(rusqlite::Error) -> String + '_ {
+    move |e| match e {
+        rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::ConstraintViolation => {
+            format!("A label named {name} already exists")
+        }
+        e => err(e),
+    }
+}
+
+pub fn create_label(conn: &Connection, name: String, color: Color) -> CmdResult<Label> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("Label name can't be empty".into());
+    }
+    let id = new_id();
+    conn.execute(
+        "INSERT INTO labels (id, name, color, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![id, name, color, now()],
+    )
+    .map_err(label_error(name))?;
+    get_label(conn, &id)
+}
+
+pub fn update_label(conn: &Connection, id: String, patch: LabelPatch) -> CmdResult<Label> {
+    if let Some(name) = patch.name {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("Label name can't be empty".into());
+        }
+        conn.execute("UPDATE labels SET name = ?2 WHERE id = ?1", params![id, name])
+            .map_err(label_error(name))?;
+    }
+    if let Some(color) = patch.color {
+        conn.execute("UPDATE labels SET color = ?2 WHERE id = ?1", params![id, color])
+            .map_err(err)?;
+    }
+    get_label(conn, &id)
+}
+
+/// Also removes it from every ticket.
+pub fn delete_label(conn: &Connection, id: String) -> CmdResult<()> {
+    conn.execute("DELETE FROM labels WHERE id = ?1", [id]).map_err(err)?;
+    Ok(())
+}
+
+/// Adds the label to the ticket, or removes it when `applied` is false.
+pub fn set_ticket_label(conn: &Connection, ticket_id: String, label_id: String, applied: bool) -> CmdResult<Ticket> {
+    if applied {
+        conn.execute(
+            "INSERT OR IGNORE INTO ticket_labels (ticket_id, label_id) VALUES (?1, ?2)",
+            params![ticket_id, label_id],
+        )
+        .map_err(err)?;
+    } else {
+        conn.execute(
+            "DELETE FROM ticket_labels WHERE ticket_id = ?1 AND label_id = ?2",
+            params![ticket_id, label_id],
+        )
+        .map_err(err)?;
+    }
+    get_ticket(conn, &ticket_id)
+}
+
 fn is_valid_date(date: &str) -> bool {
     let b = date.as_bytes();
     b.len() == 10
@@ -439,14 +517,14 @@ pub fn delete_checklist_item(conn: &Connection, id: String) -> CmdResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{BoardColor, Priority};
+    use crate::models::Priority;
 
     fn db() -> Connection {
         crate::db::open_in_memory().unwrap()
     }
 
     fn board(conn: &Connection, key: &str) -> Board {
-        create_board(conn, NewBoard { name: key.into(), key: key.into(), color: BoardColor::Blue }).unwrap()
+        create_board(conn, NewBoard { name: key.into(), key: key.into(), color: Color::Blue }).unwrap()
     }
 
     fn ticket(conn: &mut Connection, board_id: Option<&str>, status: Status) -> Ticket {
@@ -489,7 +567,7 @@ mod tests {
     fn rejects_bad_board_keys_and_empty_names() {
         let conn = db();
         board(&conn, "ENG");
-        let new = |name: &str, key: &str| NewBoard { name: name.into(), key: key.into(), color: BoardColor::Red };
+        let new = |name: &str, key: &str| NewBoard { name: name.into(), key: key.into(), color: Color::Red };
         assert!(create_board(&conn, new("Again", "eng")).is_err(), "duplicate key, case-insensitive");
         assert!(create_board(&conn, new("Digits", "1AB")).is_err());
         assert!(create_board(&conn, new("Long", "TOOLONG")).is_err());
@@ -637,5 +715,36 @@ mod tests {
         assert!(move_ticket(&mut conn, t.id.clone(), Some(ops.id.clone()), Some(auth.id.clone())).is_err());
         let moved = move_ticket(&mut conn, t.id.clone(), Some(ops.id.clone()), None).unwrap();
         assert_eq!((moved.board_key.as_deref(), moved.project_id), (Some("OPS"), None));
+    }
+
+    #[test]
+    fn labels_are_unique_and_attach_to_tickets() {
+        let mut conn = db();
+        let bug = create_label(&conn, " bug ".into(), Color::Red).unwrap();
+        let perf = create_label(&conn, "perf".into(), Color::Yellow).unwrap();
+        assert_eq!(bug.name, "bug");
+        assert!(create_label(&conn, "BUG".into(), Color::Blue).is_err(), "names are unique ignoring case");
+        assert!(create_label(&conn, " ".into(), Color::Blue).is_err());
+
+        let t = ticket(&mut conn, None, Status::Backlog);
+        set_ticket_label(&conn, t.id.clone(), bug.id.clone(), true).unwrap();
+        set_ticket_label(&conn, t.id.clone(), bug.id.clone(), true).unwrap();
+        let tagged = set_ticket_label(&conn, t.id.clone(), perf.id.clone(), true).unwrap();
+        let mut ids = tagged.label_ids.clone();
+        ids.sort();
+        let mut expected = vec![bug.id.clone(), perf.id.clone()];
+        expected.sort();
+        assert_eq!(ids, expected, "adding twice is a no-op");
+
+        let untagged = set_ticket_label(&conn, t.id.clone(), perf.id.clone(), false).unwrap();
+        assert_eq!(untagged.label_ids, std::slice::from_ref(&bug.id));
+
+        let patch = LabelPatch { name: Some("defect".into()), color: Some(Color::Orange) };
+        let renamed = update_label(&conn, bug.id.clone(), patch).unwrap();
+        assert_eq!((renamed.name.as_str(), renamed.color), ("defect", Color::Orange));
+
+        delete_label(&conn, bug.id).unwrap();
+        assert!(list_tickets(&conn, None).unwrap()[0].label_ids.is_empty());
+        assert_eq!(list_labels(&conn).unwrap().len(), 1);
     }
 }

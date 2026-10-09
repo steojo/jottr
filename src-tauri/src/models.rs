@@ -50,7 +50,8 @@ text_enum!(Priority {
     Urgent => "urgent",
 });
 
-text_enum!(BoardColor {
+// The swatch set for boards and labels.
+text_enum!(Color {
     Gray => "gray",
     Red => "red",
     Orange => "orange",
@@ -71,7 +72,7 @@ pub struct Board {
     pub id: String,
     pub name: String,
     pub key: String,
-    pub color: BoardColor,
+    pub color: Color,
 }
 
 impl Board {
@@ -120,6 +121,7 @@ pub struct Ticket {
     pub completed_at: Option<f64>,
     pub checklist_done: i32,
     pub checklist_total: i32,
+    pub label_ids: Vec<String>,
 }
 
 impl Ticket {
@@ -127,7 +129,8 @@ impl Ticket {
     pub const COLUMNS: &'static str = "t.id, t.board_id, b.key, t.project_id, t.number, t.title, \
          t.description, t.status, t.priority, t.due_date, t.position, t.completed_at, \
          (SELECT COUNT(*) FROM checklist_items c WHERE c.ticket_id = t.id AND c.done = 1), \
-         (SELECT COUNT(*) FROM checklist_items c WHERE c.ticket_id = t.id)";
+         (SELECT COUNT(*) FROM checklist_items c WHERE c.ticket_id = t.id), \
+         (SELECT GROUP_CONCAT(label_id) FROM ticket_labels l WHERE l.ticket_id = t.id)";
 
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Self {
@@ -145,6 +148,11 @@ impl Ticket {
             completed_at: row.get::<_, Option<i64>>(11)?.map(|ms| ms as f64),
             checklist_done: row.get(12)?,
             checklist_total: row.get(13)?,
+            // IDs are UUIDs, so commas can't appear inside one.
+            label_ids: row
+                .get::<_, Option<String>>(14)?
+                .map(|ids| ids.split(',').map(String::from).collect())
+                .unwrap_or_default(),
         })
     }
 }
@@ -154,7 +162,7 @@ impl Ticket {
 pub struct NewBoard {
     pub name: String,
     pub key: String,
-    pub color: BoardColor,
+    pub color: Color,
 }
 
 #[derive(Debug, Deserialize, Type)]
@@ -178,6 +186,30 @@ pub struct TicketPatch {
     pub description: Option<String>,
     pub status: Option<Status>,
     pub priority: Option<Priority>,
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Label {
+    pub id: String,
+    pub name: String,
+    pub color: Color,
+}
+
+impl Label {
+    pub const COLUMNS: &'static str = "id, name, color";
+
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self { id: row.get(0)?, name: row.get(1)?, color: row.get(2)? })
+    }
+}
+
+/// Fields left as `None` are unchanged.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LabelPatch {
+    pub name: Option<String>,
+    pub color: Option<Color>,
 }
 
 #[derive(Debug, Serialize, Type)]

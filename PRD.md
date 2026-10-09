@@ -107,7 +107,7 @@ Board  (e.g. Engineering, Marketing, Life)
   - **Description**: stored as markdown, edited as rich text with markdown shortcuts
   - **Status**
   - **Priority**: None, Low, Medium, High, Urgent
-  - **Labels**
+  - **Labels**: shared by every board. Each has a name (unique, ignoring case) and a colour from the swatch set.
   - **Due date**
   - **Project**
 
@@ -168,6 +168,11 @@ Standard views:
 
 ### 5.10 Attachments
 - Attach files and images to tickets.
+
+### 5.12 Labels
+- `L` opens the label picker: type to filter, `Enter` adds or removes the highlighted label, and it stays open for more. Typing a new name offers to create it, using the first colour not yet taken.
+- Right-click a label in the picker to change its colour, rename it, or delete it. Deleting removes it from every ticket, after a confirmation.
+- The right-click menu on a ticket has a Labels submenu that stays open while you tick several.
 
 ### 5.11 Multi-select & bulk edit
 - Select multiple tickets in the list or board (`X` to select, `⌘A` to select all).

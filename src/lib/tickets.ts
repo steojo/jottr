@@ -1,4 +1,4 @@
-import type { Board, BoardColor, Priority, Project, Status, Ticket, TicketPatch } from "../bindings";
+import type { Board, Color, Priority, Project, Status, Ticket, TicketPatch } from "../bindings";
 
 /** Picker order; `S` then `3` = In Progress. */
 export const STATUSES: { value: Status; label: string }[] = [
@@ -116,10 +116,16 @@ export function applyPatch(ticket: Ticket, p: TicketPatch, siblings: Ticket[]): 
   return next;
 }
 
-export const BOARD_COLORS: BoardColor[] = ["gray", "red", "orange", "yellow", "green", "blue", "purple", "pink"];
+export const COLORS: Color[] = ["gray", "red", "orange", "yellow", "green", "blue", "purple", "pink"];
+
+/** The first colour no label uses yet, so new labels look distinct; cycles once all are taken. */
+export function nextLabelColor(labels: { color: Color }[]): Color {
+  const order: Color[] = ["red", "orange", "yellow", "green", "blue", "purple", "pink", "gray"];
+  return order.find((c) => !labels.some((l) => l.color === c)) ?? order[labels.length % order.length];
+}
 
 /** Full class names so Tailwind can see them. */
-export const SWATCH_BG: Record<BoardColor, string> = {
+export const SWATCH_BG: Record<Color, string> = {
   gray: "bg-swatch-gray",
   red: "bg-swatch-red",
   orange: "bg-swatch-orange",

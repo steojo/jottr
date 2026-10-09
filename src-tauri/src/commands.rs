@@ -2,7 +2,8 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::models::{
-    Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Project, Status, Ticket, TicketPatch,
+    Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Status, Ticket,
+    TicketPatch,
 };
 use crate::store::{self, err, CmdResult};
 
@@ -116,4 +117,41 @@ pub async fn rename_project(db: State<'_, Db>, id: String, name: String) -> CmdR
 #[specta::specta]
 pub async fn delete_project(db: State<'_, Db>, id: String) -> CmdResult<()> {
     store::delete_project(&*db.0.lock().map_err(err)?, id)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_labels(db: State<'_, Db>) -> CmdResult<Vec<Label>> {
+    store::list_labels(&*db.0.lock().map_err(err)?)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_label(db: State<'_, Db>, name: String, color: Color) -> CmdResult<Label> {
+    store::create_label(&*db.0.lock().map_err(err)?, name, color)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn update_label(db: State<'_, Db>, id: String, patch: LabelPatch) -> CmdResult<Label> {
+    store::update_label(&*db.0.lock().map_err(err)?, id, patch)
+}
+
+/// Also removes it from every ticket.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_label(db: State<'_, Db>, id: String) -> CmdResult<()> {
+    store::delete_label(&*db.0.lock().map_err(err)?, id)
+}
+
+/// Adds the label to the ticket, or removes it when `applied` is false.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_ticket_label(
+    db: State<'_, Db>,
+    ticket_id: String,
+    label_id: String,
+    applied: bool,
+) -> CmdResult<Ticket> {
+    store::set_ticket_label(&*db.0.lock().map_err(err)?, ticket_id, label_id, applied)
 }

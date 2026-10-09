@@ -2,7 +2,8 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import type { ReactNode } from "react";
 
 import type { Board, Priority, Project, Status, Ticket } from "../bindings";
-import { PRIORITIES, STATUSES, moveDestinations, type Destination } from "../lib/tickets";
+import { useLabels, useSetTicketLabel } from "../lib/queries";
+import { PRIORITIES, STATUSES, SWATCH_BG, moveDestinations, type Destination } from "../lib/tickets";
 import { CheckIcon, ChevronRightIcon, DestinationIcon, PriorityIcon, StatusIcon } from "./icons";
 import { Kbd } from "./ui";
 
@@ -66,6 +67,9 @@ export function TicketMenu({
                 onSelect={() => onPriority(p.value)}
               />
             ))}
+          </Submenu>
+          <Submenu icon={<span className="size-3.5" />} label="Labels" shortcut="L">
+            <LabelOptions ticket={ticket} />
           </Submenu>
           <Submenu icon={<span className="size-3.5" />} label="Move to" shortcut="M" disabled={destinations.length === 0}>
             {destinations.map((d) => (
@@ -131,4 +135,33 @@ function Option({
       {current && <CheckIcon />}
     </ContextMenu.Item>
   );
+}
+
+/** Mounted only while the menu is open, so rows don't each subscribe to labels. */
+function LabelOptions({ ticket }: { ticket: Ticket }) {
+  const labels = useLabels().data ?? [];
+  const setLabel = useSetTicketLabel();
+  if (labels.length === 0) {
+    return <div className="px-2 py-1.5 text-fg-tertiary">No labels yet. Press L to create one.</div>;
+  }
+  return labels.map((label) => {
+    const applied = ticket.labelIds.includes(label.id);
+    return (
+      <ContextMenu.Item
+        key={label.id}
+        className={item}
+        // Stay open so several labels can be toggled in a row.
+        onSelect={(e) => {
+          e.preventDefault();
+          setLabel.mutate({ ticket, labelId: label.id, applied: !applied });
+        }}
+      >
+        <span className="flex size-3.5 items-center justify-center">
+          <span className={`size-2 rounded-full ${SWATCH_BG[label.color]}`} />
+        </span>
+        <span className="flex-1">{label.name}</span>
+        {applied && <CheckIcon />}
+      </ContextMenu.Item>
+    );
+  });
 }

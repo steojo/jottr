@@ -11,6 +11,13 @@ export const commands = {
 	renameProject: (id: string, name: string) => __TAURI_INVOKE<Project>("rename_project", { id, name }),
 	/**  The project's tickets stay on the board, without a project. */
 	deleteProject: (id: string) => __TAURI_INVOKE<null>("delete_project", { id }),
+	listLabels: () => __TAURI_INVOKE<Label[]>("list_labels"),
+	createLabel: (name: string, color: Color) => __TAURI_INVOKE<Label>("create_label", { name, color }),
+	updateLabel: (id: string, patch: LabelPatch) => __TAURI_INVOKE<Label>("update_label", { id, patch }),
+	/**  Also removes it from every ticket. */
+	deleteLabel: (id: string) => __TAURI_INVOKE<null>("delete_label", { id }),
+	/**  Adds the label to the ticket, or removes it when `applied` is false. */
+	setTicketLabel: (ticketId: string, labelId: string, applied: boolean) => __TAURI_INVOKE<Ticket>("set_ticket_label", { ticketId, labelId, applied }),
 	/**  Tickets on a board, or in the Inbox when `board_id` is `None`. */
 	listTickets: (boardId: string | null) => __TAURI_INVOKE<Ticket[]>("list_tickets", { boardId }),
 	/**  New tickets go to the top of their status group. */
@@ -36,10 +43,8 @@ export type Board = {
 	id: string,
 	name: string,
 	key: string,
-	color: BoardColor,
+	color: Color,
 };
-
-export type BoardColor = "gray" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
 
 export type ChecklistItem = {
 	id: string,
@@ -55,10 +60,24 @@ export type ChecklistPatch = {
 	done: boolean | null,
 };
 
+export type Color = "gray" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
+
+export type Label = {
+	id: string,
+	name: string,
+	color: Color,
+};
+
+/**  Fields left as `None` are unchanged. */
+export type LabelPatch = {
+	name: string | null,
+	color: Color | null,
+};
+
 export type NewBoard = {
 	name: string,
 	key: string,
-	color: BoardColor,
+	color: Color,
 };
 
 export type NewTicket = {
@@ -96,6 +115,7 @@ export type Ticket = {
 	completedAt: number | null,
 	checklistDone: number,
 	checklistTotal: number,
+	labelIds: string[],
 };
 
 /**  Fields left as `None` are unchanged. */

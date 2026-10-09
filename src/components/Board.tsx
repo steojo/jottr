@@ -14,8 +14,8 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import type { Board as BoardModel, Project, Status, Ticket } from "../bindings";
-import { useRepositionTicket, useUpdateTicket } from "../lib/queries";
+import type { Board as BoardModel, Label, Project, Status, Ticket } from "../bindings";
+import { useLabels, useRepositionTicket, useUpdateTicket } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
 import { usePersistentState } from "../lib/storage";
 import {
@@ -33,6 +33,7 @@ import {
 } from "../lib/tickets";
 import { ChecklistProgress } from "./Checklist";
 import { ChevronRightIcon, PlusIcon, PriorityIcon, StatusIcon } from "./icons";
+import { LabelChips } from "./Labels";
 import { TicketMenu } from "./TicketMenu";
 import { TicketPickers, type PickerKind } from "./TicketPickers";
 import { IconButton } from "./ui";
@@ -71,6 +72,7 @@ export function Board({
   const cards = useRef(new Map<string, HTMLElement>());
   const update = useUpdateTicket();
   const reposition = useRepositionTicket();
+  const labels = useLabels().data ?? [];
 
   const columns = useMemo(() => boardColumns(tickets ?? []), [tickets]);
   const byId = useMemo(() => new Map((tickets ?? []).map((t) => [t.id, t])), [tickets]);
@@ -126,6 +128,7 @@ export function Board({
     s: () => active && setPicker("status"),
     p: () => active && setPicker("priority"),
     d: () => active && setPicker("due"),
+    l: () => active && setPicker("labels"),
     m: () => active && setPicker("move"),
     escape: () => onActiveChange(null),
   });
@@ -229,6 +232,7 @@ export function Board({
                 >
                   <SortableCard
                     ticket={ticket}
+                    labels={labels}
                     active={ticket.id === activeId}
                     keyboard={keyboard}
                     cardRef={(el) => {
@@ -253,7 +257,7 @@ export function Board({
 
       {/* No drop animation: the card lands instantly; only the drop target fades in. */}
       <DragOverlay dropAnimation={null}>
-        {dragged && <Card ticket={dragged} active={false} keyboard={false} lifted />}
+        {dragged && <Card ticket={dragged} labels={labels} active={false} keyboard={false} lifted />}
       </DragOverlay>
 
       <TicketPickers ticket={active} boards={boards} projects={projects} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />
@@ -342,6 +346,7 @@ function CollapsedColumn({ status, count, onExpand }: { status: Status; count: n
 
 function SortableCard({
   ticket,
+  labels,
   active,
   keyboard,
   cardRef,
@@ -349,6 +354,7 @@ function SortableCard({
   onPick,
 }: {
   ticket: Ticket;
+  labels: Label[];
   active: boolean;
   keyboard: boolean;
   cardRef: (el: HTMLElement | null) => void;
@@ -372,11 +378,11 @@ function SortableCard({
         // The drop target: where the card will land.
         <div className="animate-drop-target rounded-lg border border-dashed border-line-strong motion-reduce:animate-none">
           <div className="invisible">
-            <Card ticket={ticket} active={false} keyboard={false} />
+            <Card ticket={ticket} labels={labels} active={false} keyboard={false} />
           </div>
         </div>
       ) : (
-        <Card ticket={ticket} active={active} keyboard={keyboard} onClick={onClick} onPick={onPick} />
+        <Card ticket={ticket} labels={labels} active={active} keyboard={keyboard} onClick={onClick} onPick={onPick} />
       )}
     </div>
   );
@@ -385,6 +391,7 @@ function SortableCard({
 /** Title up to two lines, then a meta row (PRD §6.6). The project isn't shown, to keep cards scannable. */
 function Card({
   ticket,
+  labels,
   active,
   keyboard,
   lifted,
@@ -392,6 +399,7 @@ function Card({
   onPick,
 }: {
   ticket: Ticket;
+  labels: Label[];
   active: boolean;
   keyboard: boolean;
   /** The copy that follows the pointer while dragging. */
@@ -425,6 +433,7 @@ function Card({
           <PriorityIcon priority={ticket.priority} />
         )}
         {key && <span className="font-mono text-[11px] text-fg-tertiary">{key}</span>}
+        <LabelChips ids={ticket.labelIds} labels={labels} max={2} />
         {ticket.checklistTotal > 0 && <ChecklistProgress done={ticket.checklistDone} total={ticket.checklistTotal} />}
         {ticket.dueDate && (
           <span

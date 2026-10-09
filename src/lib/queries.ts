@@ -4,6 +4,8 @@ import {
   commands,
   type ChecklistItem,
   type ChecklistPatch,
+  type Color,
+  type LabelPatch,
   type NewBoard,
   type NewTicket,
   type Status,
@@ -226,4 +228,60 @@ export function useChecklist(ticket: Ticket) {
   });
 
   return { items: query.data, add, update, remove };
+}
+
+const labelsKey = ["labels"] as const;
+
+/** All labels, sorted by name. Labels are shared by every board. */
+export function useLabels() {
+  return useQuery({ queryKey: labelsKey, queryFn: commands.listLabels });
+}
+
+export function useCreateLabel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, color }: { name: string; color: Color }) => commands.createLabel(name, color),
+    onSuccess: () => qc.invalidateQueries({ queryKey: labelsKey }),
+  });
+}
+
+export function useUpdateLabel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: LabelPatch }) => commands.updateLabel(id, patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: labelsKey }),
+  });
+}
+
+/** Deleting removes the label from every ticket, so ticket lists are refetched too. */
+export function useDeleteLabel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => commands.deleteLabel(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: labelsKey });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+    },
+  });
+}
+
+/** Adds or removes one label on a ticket. */
+export function useSetTicketLabel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ticket, labelId, applied }: { ticket: Ticket; labelId: string; applied: boolean }) =>
+      commands.setTicketLabel(ticket.id, labelId, applied),
+    onMutate: async ({ ticket, labelId, applied }) => {
+      const key = ticketsKey(ticket.boardId);
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<Ticket[]>(key);
+      patchCachedTicket(qc, ticket.boardId, ticket.id, (t) => ({
+        ...t,
+        labelIds: applied ? [...new Set([...t.labelIds, labelId])] : t.labelIds.filter((id) => id !== labelId),
+      }));
+      return { key, previous };
+    },
+    onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
+    onSuccess: (saved) => patchCachedTicket(qc, saved.boardId, saved.id, () => saved),
+  });
 }

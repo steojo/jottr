@@ -13,9 +13,10 @@ import {
   type Destination,
 } from "../lib/tickets";
 import { DestinationIcon, PriorityIcon, StatusIcon } from "./icons";
+import { LabelPicker } from "./Labels";
 import { Picker, type PickerOption } from "./Picker";
 
-export type PickerKind = "status" | "priority" | "due" | "move";
+export type PickerKind = "status" | "priority" | "due" | "labels" | "move";
 
 const STATUS_OPTIONS: PickerOption<Status>[] = STATUSES.map((s) => ({ ...s, icon: <StatusIcon status={s.value} /> }));
 const PRIORITY_OPTIONS = PRIORITIES.map((p) => ({ ...p, icon: <PriorityIcon priority={p.value} /> }));
@@ -99,6 +100,7 @@ export function TicketPickers({
           />
         }
       />
+      <LabelPicker open={kind === "labels"} onOpenChange={close} ticket={ticket} />
       <Picker
         open={kind === "move" && moveOptions.length > 0}
         onOpenChange={close}

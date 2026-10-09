@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { Board, Project, Status, Ticket } from "../bindings";
-import { useUpdateTicket } from "../lib/queries";
+import type { Board, Label, Project, Status, Ticket } from "../bindings";
+import { useLabels, useUpdateTicket } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
 import {
   adjacentStatus,
@@ -16,6 +16,7 @@ import {
 } from "../lib/tickets";
 import { ChecklistProgress } from "./Checklist";
 import { PlusIcon, PriorityIcon, ProjectIcon, StatusIcon } from "./icons";
+import { LabelChips } from "./Labels";
 import { TicketMenu } from "./TicketMenu";
 import { TicketPickers, type PickerKind } from "./TicketPickers";
 import { IconButton, Kbd } from "./ui";
@@ -50,6 +51,7 @@ export function TicketList({
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const rows = useRef(new Map<string, HTMLDivElement>());
   const update = useUpdateTicket();
+  const labels = useLabels().data ?? [];
 
   const order = useMemo(() => groups?.flatMap((g) => g.tickets) ?? [], [groups]);
   const active = order.find((t) => t.id === activeId);
@@ -99,6 +101,7 @@ export function TicketList({
     s: () => openPicker("status"),
     p: () => openPicker("priority"),
     d: () => openPicker("due"),
+    l: () => openPicker("labels"),
     m: () => openPicker("move"),
     escape: () => onActiveChange(null),
   });
@@ -151,6 +154,7 @@ export function TicketList({
               <TicketRow
                 ticket={ticket}
                 project={showProject ? projects.find((p) => p.id === ticket.projectId) : undefined}
+                labels={labels}
                 idWidth={idWidth}
                 active={ticket.id === activeId}
                 keyboard={keyboard}
@@ -177,6 +181,7 @@ export function TicketList({
 function TicketRow({
   ticket,
   project,
+  labels,
   idWidth,
   active,
   keyboard,
@@ -186,6 +191,7 @@ function TicketRow({
 }: {
   ticket: Ticket;
   project: Project | undefined;
+  labels: Label[];
   /** In `ch`, so the mono IDs fit exactly. */
   idWidth: number;
   active: boolean;
@@ -221,6 +227,7 @@ function TicketRow({
       )}
       <span className={`flex-1 truncate ${isFinished(ticket) ? "text-fg-tertiary" : ""}`}>{ticket.title}</span>
       {/* Fixed slots, same order on every row (PRD §6.5). Empty slots take no space. */}
+      <LabelChips ids={ticket.labelIds} labels={labels} />
       {ticket.checklistTotal > 0 && <ChecklistProgress done={ticket.checklistDone} total={ticket.checklistTotal} />}
       {project && (
         <span className="flex max-w-40 shrink-0 items-center gap-1.5 text-[12px] text-fg-tertiary">
