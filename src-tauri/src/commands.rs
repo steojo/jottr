@@ -162,3 +162,17 @@ pub async fn set_ticket_label(
 pub async fn delete_ticket(db: State<'_, Db>, id: String) -> CmdResult<()> {
     store::delete_ticket(&*db.0.lock().map_err(err)?, id)
 }
+
+/// Tickets on every board and in the Inbox, best matches first.
+#[tauri::command]
+#[specta::specta]
+pub async fn search_tickets(db: State<'_, Db>, query: String) -> CmdResult<Vec<Ticket>> {
+    store::search_tickets(&*db.0.lock().map_err(err)?, query)
+}
+
+/// My Focus: open tickets anywhere that are in progress, in review, or due by `due_by`.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_focus(db: State<'_, Db>, due_by: String) -> CmdResult<Vec<Ticket>> {
+    store::list_focus(&*db.0.lock().map_err(err)?, due_by)
+}

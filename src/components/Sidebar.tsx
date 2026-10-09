@@ -5,8 +5,8 @@ import type { Board, Project } from "../bindings";
 import { SWATCH_BG } from "../lib/tickets";
 import { ChevronRightIcon, PlusIcon, ProjectIcon } from "./icons";
 
-/** A board, optionally narrowed to one of its projects. */
-export type View = { kind: "inbox" } | { kind: "board"; boardId: string; projectId?: string };
+/** The Inbox, My Focus, or a board optionally narrowed to one of its projects. */
+export type View = { kind: "inbox" } | { kind: "focus" } | { kind: "board"; boardId: string; projectId?: string };
 
 // Buttons don't take focus on click, so keyboard shortcuts keep working afterwards.
 const noFocus = (e: MouseEvent) => e.preventDefault();
@@ -25,6 +25,7 @@ export function Sidebar({
   projects,
   view,
   inboxCount,
+  focusCount,
   expanded,
   onToggle,
   onNavigate,
@@ -37,6 +38,7 @@ export function Sidebar({
   projects: Project[];
   view: View;
   inboxCount: number;
+  focusCount: number;
   /** Board IDs whose projects are showing. */
   expanded: string[];
   onToggle: (boardId: string) => void;
@@ -61,6 +63,18 @@ export function Sidebar({
           Inbox
           {inboxCount > 0 && (
             <span className="ml-auto font-mono text-[11px] font-normal text-fg-tertiary">{inboxCount}</span>
+          )}
+        </button>
+        <button
+          type="button"
+          title="My Focus · G then F"
+          onMouseDown={noFocus}
+          onClick={() => onNavigate({ kind: "focus" })}
+          className={item(view.kind === "focus")}
+        >
+          My Focus
+          {focusCount > 0 && (
+            <span className="ml-auto font-mono text-[11px] font-normal text-fg-tertiary">{focusCount}</span>
           )}
         </button>
       </nav>

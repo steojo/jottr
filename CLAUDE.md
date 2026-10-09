@@ -44,13 +44,15 @@ Rust owns all data; the UI never touches the database directly.
 - **UI data (`src/lib/queries.ts`):** TanStack Query, with `staleTime: Infinity` since all data is local. Mutations update the cache optimistically and roll back on error. `applyPatch` in `src/lib/tickets.ts` mirrors `update_ticket` and must stay in sync with it.
 - **Labels** are global (not per board). `Ticket.labelIds` comes from a `GROUP_CONCAT` subquery in `Ticket::COLUMNS`, and the UI resolves names and colours from `useLabels()`. `set_ticket_label` adds or removes one label at a time.
 - **Projects** are a filter over a board's tickets: a project view (`View.projectId`) shows the board's cached tickets filtered by `projectId`. `move_ticket` sets board and project together and rejects a project from another board. `moveDestinations` in `src/lib/tickets.ts` builds the destination list for both the `M` picker and the right-click menu.
-- **Views:** `App.tsx` owns the current scope (Inbox, a board, or a project), the selected ticket (`activeId`) and the open ticket (`openId`). With a ticket open, `TicketPage` replaces `TicketList`, and both share `TicketPickers` for the S/P/D/M pickers. `groupTickets` in `src/lib/tickets.ts` defines the list order that J/K follow.
+- **Views:** `App.tsx` owns the current scope (Inbox, My Focus, a board, or a project), the active filters (`applyFilters`; reset on navigation), the selected ticket (`activeId`) and the open ticket (`openId`). With a ticket open, `TicketPage` replaces `TicketList`, and both share `TicketPickers` for the S/P/D/L/M pickers. `groupTickets` in `src/lib/tickets.ts` defines the list order that J/K follow.
 - **Board view (`Board.tsx`):** dnd-kit (`@dnd-kit/core` + `sortable`).
   - While dragging, columns are rearranged in local state so the drop target follows the pointer. On drop, `positionBetween` picks a fractional position from the neighbours, and `reposition_ticket` saves status and position together.
   - Cards move without transitions; the dashed drop target (`animate-drop-target`) is the app's only animation.
   - The Done column is ordered by `completedAt` and grouped by day (`groupByCompletionDay`).
   - Per-board UI preferences (layout, collapsed columns) live in localStorage via `usePersistentState`, not SQLite.
 - **Ticket page:** the description editor (`DescriptionEditor.tsx`, TipTap + `@tiptap/markdown`) is lazy-loaded, since it's the heaviest dependency. Descriptions are stored as markdown. The page content is keyed by ticket ID so J/K remounts the editors, which flushes pending saves.
+- **Search and My Focus** span every board, so a `MutationCache` hook in `queries.ts` refetches them after any change. Search uses the `tickets_fts` FTS5 table, kept in step by triggers (migration 0004).
+- **Command menu (`CommandMenu.tsx`):** commands are built in `App.tsx`. Ticket actions call `runShortcut("s")` and so on, so they behave exactly like the keys.
 - **Keyboard (`src/lib/shortcuts.ts`):** one global `keydown` listener with a registry of `useShortcuts` maps. The most recently mounted map wins, so views override global keys. It handles the `g x` prefix sequences.
   - Shortcuts are ignored while typing or while any `[role=dialog]` or `[role=menu]` is open. Dialogs and menus handle their own keys; see `Picker.tsx` for the numbered-option pattern.
   - Buttons call `preventDefault` on `mousedown`, and dialogs skip focus return, so focus stays on the body and Enter/Space can't re-trigger a button.
@@ -76,3 +78,10 @@ Rust owns all data; the UI never touches the database directly.
 ## Repo notes
 
 - `references/` holds third-party Dribbble designs used for inspiration. It's gitignored because the repo is public and those images aren't ours to publish. `design/` holds our own design explorations.
+
+## Working efficiently
+
+The owner's usage limits are tight, so keep context small:
+- Use one chat per feature. This file, `PRD.md` and the code carry the context, so don't re-read files you don't need.
+- Verify with `npm run build` and `cd src-tauri && cargo test` first. For UI checks, prefer reading text from the page over screenshots. Take a screenshot only when the look of something changed, at 1x scale.
+- Batch checks into as few tool calls as possible, and edit with targeted edits rather than rewriting whole files.

@@ -20,6 +20,10 @@ export const commands = {
 	setTicketLabel: (ticketId: string, labelId: string, applied: boolean) => __TAURI_INVOKE<Ticket>("set_ticket_label", { ticketId, labelId, applied }),
 	/**  Tickets on a board, or in the Inbox when `board_id` is `None`. */
 	listTickets: (boardId: string | null) => __TAURI_INVOKE<Ticket[]>("list_tickets", { boardId }),
+	/**  Tickets on every board and in the Inbox, best matches first. */
+	searchTickets: (query: string) => __TAURI_INVOKE<Ticket[]>("search_tickets", { query }),
+	/**  My Focus: open tickets anywhere that are in progress, in review, or due by `due_by`. */
+	listFocus: (dueBy: string) => __TAURI_INVOKE<Ticket[]>("list_focus", { dueBy }),
 	/**  New tickets go to the top of their status group. */
 	createTicket: (input: NewTicket) => __TAURI_INVOKE<Ticket>("create_ticket", { input }),
 	updateTicket: (id: string, patch: TicketPatch) => __TAURI_INVOKE<Ticket>("update_ticket", { id, patch }),

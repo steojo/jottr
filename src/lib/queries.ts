@@ -1,4 +1,4 @@
-import { QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, MutationCache, QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   commands,
@@ -12,11 +12,18 @@ import {
   type Ticket,
   type TicketPatch,
 } from "../bindings";
-import { applyPatch, type Destination } from "./tickets";
+import { addDays, applyPatch, toDateKey, type Destination } from "./tickets";
 
 // Everything is local, so data is only stale when we change it ourselves.
-export const queryClient = new QueryClient({
+// My Focus and search span every board, so any change refreshes them.
+export const queryClient: QueryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: Infinity, retry: false } },
+  mutationCache: new MutationCache({
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["focus"] });
+      void queryClient.invalidateQueries({ queryKey: ["search"] });
+    },
+  }),
 });
 
 const boardsKey = ["boards"] as const;
@@ -300,5 +307,25 @@ export function useDeleteTicket() {
     },
     onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
     onSuccess: (_result, ticket) => qc.removeQueries({ queryKey: checklistKey(ticket.id) }),
+  });
+}
+
+/** Days ahead that count as "due soon" in My Focus. */
+export const FOCUS_DAYS = 7;
+
+/** My Focus: in-progress, in-review and soon-due tickets from every board and the Inbox. */
+export function useFocus() {
+  const dueBy = toDateKey(addDays(FOCUS_DAYS));
+  return useQuery({ queryKey: ["focus", dueBy], queryFn: () => commands.listFocus(dueBy) });
+}
+
+/** Full-text search over every ticket. Keeps the last results on screen while typing. */
+export function useSearch(query: string) {
+  const q = query.trim();
+  return useQuery({
+    queryKey: ["search", q],
+    queryFn: () => commands.searchTickets(q),
+    enabled: q.length > 0,
+    placeholderData: keepPreviousData,
   });
 }

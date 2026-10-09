@@ -40,7 +40,8 @@ export function ticketKey(t: Ticket): string | null {
 
 export const byPosition = (a: Ticket, b: Ticket) => (a.position ?? 0) - (b.position ?? 0);
 
-export type TicketGroup = { status: Status | null; tickets: Ticket[] };
+/** A list section, headed by a status or, in My Focus, a plain label. */
+export type TicketGroup = { status: Status | null; label?: string; tickets: Ticket[] };
 
 /** The list's display order: status groups (boards) or one flat list (Inbox). */
 export function groupTickets(tickets: Ticket[], grouped: boolean): TicketGroup[] {
@@ -221,4 +222,36 @@ export function moveDestinations(ticket: Ticket, boards: Board[], projects: Proj
   }
   if (ticket.boardId) options.push({ key: "inbox", to: { boardId: null, projectId: null }, label: "Inbox", kind: "inbox" });
   return options;
+}
+
+/** My Focus sections. Each ticket appears once, in the most urgent section it fits. */
+export function focusGroups(tickets: Ticket[]): TicketGroup[] {
+  const today = toDateKey(new Date());
+  const overdue = tickets.filter((t) => t.dueDate !== null && t.dueDate < today);
+  const dueSoon = tickets.filter((t) => t.dueDate !== null && t.dueDate >= today);
+  const active = tickets.filter((t) => t.dueDate === null);
+  return [
+    { status: null, label: "Overdue", tickets: overdue },
+    { status: null, label: "Due soon", tickets: dueSoon },
+    { status: null, label: "In progress", tickets: active.sort(byPosition) },
+  ].filter((g) => g.tickets.length > 0);
+}
+
+/** Narrowing the current view. Within a kind, any match counts; across kinds, all must match. */
+export type Filters = { priorities: Priority[]; labelIds: string[]; projectIds: string[] };
+
+export const NO_FILTERS: Filters = { priorities: [], labelIds: [], projectIds: [] };
+
+/** The `projectIds` value standing for "no project". */
+export const NO_PROJECT = "none";
+
+export const filterCount = (f: Filters) => f.priorities.length + f.labelIds.length + f.projectIds.length;
+
+export function applyFilters(tickets: Ticket[], f: Filters): Ticket[] {
+  return tickets.filter(
+    (t) =>
+      (f.priorities.length === 0 || f.priorities.includes(t.priority)) &&
+      (f.labelIds.length === 0 || t.labelIds.some((id) => f.labelIds.includes(id))) &&
+      (f.projectIds.length === 0 || f.projectIds.includes(t.projectId ?? NO_PROJECT)),
+  );
 }

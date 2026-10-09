@@ -434,6 +434,84 @@ pub fn set_ticket_label(conn: &Connection, ticket_id: String, label_id: String, 
     get_ticket(conn, &ticket_id)
 }
 
+/// Each word matches as a prefix, and all words must match: "pass res" finds "Password reset".
+fn fts_query(input: &str) -> Option<String> {
+    let terms: Vec<String> = input
+        .split_whitespace()
+        .map(|word| format!("\"{}\"*", word.replace('"', "\"\"")))
+        .collect();
+    (!terms.is_empty()).then(|| terms.join(" "))
+}
+
+/// Splits `ENG-42` into its board key and number.
+fn parse_ticket_key(input: &str) -> Option<(String, i32)> {
+    let (key, number) = input.trim().split_once('-')?;
+    let number = number.parse().ok()?;
+    is_valid_key(&key.to_uppercase()).then(|| (key.to_uppercase(), number))
+}
+
+/// Tickets on every board and in the Inbox, best matches first. A ticket ID like
+/// `ENG-42` puts that ticket at the top.
+pub fn search_tickets(conn: &Connection, query: String) -> CmdResult<Vec<Ticket>> {
+    let mut results: Vec<Ticket> = Vec::new();
+
+    if let Some((key, number)) = parse_ticket_key(&query) {
+        let exact = conn
+            .query_row(
+                &format!(
+                    "SELECT {} FROM tickets t JOIN boards b ON b.id = t.board_id
+                     WHERE b.key = ?1 AND t.number = ?2 AND t.archived_at IS NULL",
+                    Ticket::COLUMNS
+                ),
+                params![key, number],
+                Ticket::from_row,
+            )
+            .optional()
+            .map_err(err)?;
+        results.extend(exact);
+    }
+
+    if let Some(fts) = fts_query(&query) {
+        // Title matches count ten times more than description matches.
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT {} FROM tickets_fts f
+                 JOIN tickets t ON t.id = f.ticket_id
+                 LEFT JOIN boards b ON b.id = t.board_id
+                 WHERE tickets_fts MATCH ?1 AND t.archived_at IS NULL
+                 ORDER BY bm25(tickets_fts, 0.0, 10.0, 1.0)
+                 LIMIT 50",
+                Ticket::COLUMNS
+            ))
+            .map_err(err)?;
+        let matches = stmt.query_map([fts], Ticket::from_row).map_err(err)?;
+        for ticket in matches {
+            let ticket = ticket.map_err(err)?;
+            if !results.iter().any(|t| t.id == ticket.id) {
+                results.push(ticket);
+            }
+        }
+    }
+    Ok(results)
+}
+
+/// My Focus: open tickets anywhere that are in progress, in review, or due on or before `due_by`
+/// (`YYYY-MM-DD`). Soonest due first.
+pub fn list_focus(conn: &Connection, due_by: String) -> CmdResult<Vec<Ticket>> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {} FROM tickets t LEFT JOIN boards b ON b.id = t.board_id
+             WHERE t.archived_at IS NULL
+               AND t.status NOT IN ('done', 'canceled')
+               AND (t.status IN ('in_progress', 'in_review') OR t.due_date <= ?1)
+             ORDER BY t.due_date IS NULL, t.due_date, t.position",
+            Ticket::COLUMNS
+        ))
+        .map_err(err)?;
+    let tickets = stmt.query_map([due_by], Ticket::from_row).map_err(err)?;
+    tickets.collect::<Result<_, _>>().map_err(err)
+}
+
 fn is_valid_date(date: &str) -> bool {
     let b = date.as_bytes();
     b.len() == 10
@@ -772,5 +850,64 @@ mod tests {
         assert_eq!(links, 0);
         assert_eq!(list_labels(&conn).unwrap().len(), 1, "the label itself stays");
         assert!(delete_ticket(&conn, t.id).is_err());
+    }
+
+    fn titled(conn: &mut Connection, board_id: Option<&str>, title: &str, status: Status) -> Ticket {
+        let input = NewTicket {
+            board_id: board_id.map(String::from),
+            project_id: None,
+            title: title.into(),
+            status,
+            priority: Priority::None,
+        };
+        create_ticket(conn, input).unwrap()
+    }
+
+    fn titles(tickets: Vec<Ticket>) -> Vec<String> {
+        tickets.into_iter().map(|t| t.title).collect()
+    }
+
+    #[test]
+    fn search_matches_prefixes_descriptions_and_ticket_ids() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let reset = titled(&mut conn, Some(&eng.id), "Password reset email", Status::Ready);
+        titled(&mut conn, None, "Renew passport", Status::Backlog);
+        let notes = titled(&mut conn, Some(&eng.id), "Quick capture", Status::Backlog);
+        let patch = TicketPatch { title: None, description: Some("Register the global hotkey".into()), status: None, priority: None };
+        update_ticket(&mut conn, notes.id.clone(), patch).unwrap();
+
+        assert_eq!(titles(search_tickets(&conn, "pass res".into()).unwrap()), ["Password reset email"]);
+        assert_eq!(titles(search_tickets(&conn, "pass".into()).unwrap()).len(), 2, "across boards and the Inbox");
+        assert_eq!(titles(search_tickets(&conn, "hotkey".into()).unwrap()), ["Quick capture"]);
+        assert_eq!(titles(search_tickets(&conn, "eng-1".into()).unwrap()), ["Password reset email"]);
+        assert!(search_tickets(&conn, "   ".into()).unwrap().is_empty());
+        assert!(search_tickets(&conn, "\"quoted".into()).is_ok(), "quotes can't break the query");
+
+        let renamed = TicketPatch { title: Some("Forgot password".into()), description: None, status: None, priority: None };
+        update_ticket(&mut conn, reset.id.clone(), renamed).unwrap();
+        assert!(search_tickets(&conn, "reset".into()).unwrap().is_empty());
+        delete_ticket(&conn, reset.id).unwrap();
+        assert!(search_tickets(&conn, "forgot".into()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn focus_lists_active_and_due_tickets_from_everywhere() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        titled(&mut conn, Some(&eng.id), "Working on it", Status::InProgress);
+        titled(&mut conn, None, "Reviewing", Status::InReview);
+        let due = titled(&mut conn, None, "Due soon", Status::Backlog);
+        set_due_date(&conn, due.id, Some("2026-10-10".into())).unwrap();
+        let later = titled(&mut conn, None, "Due later", Status::Backlog);
+        set_due_date(&conn, later.id, Some("2026-12-01".into())).unwrap();
+        let finished = titled(&mut conn, Some(&eng.id), "Finished", Status::Done);
+        set_due_date(&conn, finished.id, Some("2026-10-01".into())).unwrap();
+        titled(&mut conn, None, "Someday", Status::Backlog);
+
+        let focus = titles(list_focus(&conn, "2026-10-16".into()).unwrap());
+        assert_eq!(focus[0], "Due soon", "soonest due first");
+        assert_eq!(focus.len(), 3);
+        assert!(focus.contains(&"Working on it".to_string()) && focus.contains(&"Reviewing".to_string()));
     }
 }

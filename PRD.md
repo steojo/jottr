@@ -139,10 +139,12 @@ Standard views:
 - Type a ticket title and press Enter to add it to the **top of the Inbox** (see §3.4).
 
 ### 5.3 Search
-- Instant search across all boards, projects and tickets (titles and descriptions).
+- Instant search across all boards, projects and tickets (titles and descriptions), using SQLite FTS5. Each word matches as a prefix. Typing a ticket ID like `ENG-42` puts that ticket first.
+- `/` opens search directly; `⌘K` searches tickets as well as commands.
 
 ### 5.4 My Focus view
 - A single view across **all boards** showing tickets that are in progress, due soon or overdue.
+- Sections: Overdue, Due soon (the next 7 days), In progress (in progress or in review, with no due date). Each ticket appears once, in its most urgent section.
 
 ### 5.5 Checklists
 - Simple checkbox lists inside a ticket for small steps. Lighter weight than sub-tickets.

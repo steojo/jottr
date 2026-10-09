@@ -25,6 +25,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::delete_label,
             commands::set_ticket_label,
             commands::list_tickets,
+            commands::search_tickets,
+            commands::list_focus,
             commands::create_ticket,
             commands::update_ticket,
             commands::move_ticket,

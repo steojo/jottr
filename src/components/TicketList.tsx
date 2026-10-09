@@ -46,7 +46,8 @@ export function TicketList({
   onCreate: (status: Status) => void;
   onMove: (ticket: Ticket, to: Destination) => void;
   onDelete: (ticket: Ticket) => void;
-  empty: { title: string; hint: string };
+  /** `hint` follows "Press C"; `action` replaces it, e.g. Clear filters. */
+  empty: { title: string; hint?: string; action?: { label: string; onClick: () => void } };
 }) {
   // Keyboard focus ring only shows after keyboard navigation, never after a click.
   const [keyboard, setKeyboard] = useState(false);
@@ -114,9 +115,20 @@ export function TicketList({
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2">
         <p className="text-[15px] font-semibold">{empty.title}</p>
-        <p className="flex items-center gap-1.5 text-fg-tertiary">
-          Press <Kbd>C</Kbd> {empty.hint}
-        </p>
+        {empty.action ? (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={empty.action.onClick}
+            className="mt-1 h-7 rounded-md border border-line px-3 text-fg-secondary hover:bg-surface-hover hover:text-fg"
+          >
+            {empty.action.label}
+          </button>
+        ) : (
+          <p className="flex items-center gap-1.5 text-fg-tertiary">
+            Press <Kbd>C</Kbd> {empty.hint}
+          </p>
+        )}
       </div>
     );
   }
@@ -124,7 +136,13 @@ export function TicketList({
   return (
     <div className="flex-1 overflow-y-auto">
       {groups.map((group) => (
-        <section key={group.status ?? "all"}>
+        <section key={group.status ?? group.label ?? "all"}>
+          {group.label && (
+            <div className="sticky top-0 z-10 flex h-8 items-center gap-2 border-b border-line-subtle bg-surface-elevated px-4 font-medium">
+              {group.label}
+              <span className="font-mono text-[11px] font-normal text-fg-tertiary">{group.tickets.length}</span>
+            </div>
+          )}
           {group.status && (
             <div className="group sticky top-0 z-10 flex h-8 items-center gap-2 border-b border-line-subtle bg-surface-elevated px-4 font-medium">
               <StatusIcon status={group.status} />

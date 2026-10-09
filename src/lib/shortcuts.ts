@@ -26,8 +26,12 @@ function combo(e: KeyboardEvent) {
   return parts.join("+");
 }
 
+// Work even while typing in a field.
+const ALWAYS = new Set(["mod+k"]);
+
 function onKeyDown(e: KeyboardEvent) {
-  if (e.defaultPrevented || e.isComposing || isTyping(e.target)) return;
+  if (e.defaultPrevented || e.isComposing) return;
+  if (isTyping(e.target) && !ALWAYS.has(combo(e))) return;
   // Open dialogs and menus handle their own keys.
   if (document.querySelector("[role=dialog], [role=menu]")) return;
 
@@ -53,6 +57,18 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 window.addEventListener("keydown", onKeyDown);
+
+/** Runs whatever a key currently does, as if it were pressed. Returns false if nothing handles it. */
+export function runShortcut(key: string): boolean {
+  for (const map of [...registry].reverse()) {
+    const handler = map.current[key];
+    if (handler) {
+      handler(new KeyboardEvent("keydown"));
+      return true;
+    }
+  }
+  return false;
+}
 
 export function useShortcuts(map: ShortcutMap, enabled = true) {
   const ref = useRef(map);

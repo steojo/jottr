@@ -1,12 +1,15 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { Project, Status, Ticket } from "./bindings";
 import { Board } from "./components/Board";
+import { CommandMenu, type Command } from "./components/CommandMenu";
 import { CreateBoardDialog } from "./components/CreateBoardDialog";
 import { CreateTicketDialog } from "./components/CreateTicketDialog";
+import { FilterBar, FilterMenu } from "./components/Filters";
 import { ConfirmDialog, NameDialog } from "./components/FormDialogs";
-import { ChevronUpDownIcon, ProjectIcon } from "./components/icons";
+import { ChevronUpDownIcon, PlusIcon, ProjectIcon } from "./components/icons";
 import { Picker } from "./components/Picker";
+import { ShortcutSheet } from "./components/ShortcutSheet";
 import { Sidebar, type View } from "./components/Sidebar";
 import { TicketList } from "./components/TicketList";
 import { TicketPage } from "./components/TicketPage";
@@ -15,14 +18,26 @@ import {
   useCreateProject,
   useDeleteProject,
   useDeleteTicket,
+  useFocus,
   useMoveTicket,
   useProjects,
   useRenameProject,
   useTickets,
 } from "./lib/queries";
-import { useShortcuts } from "./lib/shortcuts";
+import { runShortcut, useShortcuts } from "./lib/shortcuts";
 import { usePersistentState } from "./lib/storage";
-import { SWATCH_BG, boardColumns, groupTickets, ticketKey, type Destination } from "./lib/tickets";
+import {
+  NO_FILTERS,
+  SWATCH_BG,
+  applyFilters,
+  boardColumns,
+  filterCount,
+  focusGroups,
+  groupTickets,
+  ticketKey,
+  type Destination,
+  type Filters,
+} from "./lib/tickets";
 
 function App() {
   const [view, setView] = useState<View>({ kind: "inbox" });
@@ -30,14 +45,20 @@ function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   // The ticket shown on the ticket page; `null` shows the list.
   const [openId, setOpenId] = useState<string | null>(null);
+  // Filters apply to the current view and reset when you leave it.
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   // Status for the new ticket; `null` when the dialog is closed.
   const [creating, setCreating] = useState<Status | null>(null);
   const [creatingBoard, setCreatingBoard] = useState(false);
   const [switchingBoard, setSwitchingBoard] = useState(false);
   const [switchingProject, setSwitchingProject] = useState(false);
+  const [filtering, setFiltering] = useState(false);
+  const [commandMenu, setCommandMenu] = useState<"all" | "search" | null>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [naming, setNaming] = useState<{ boardId: string } | { project: Project } | null>(null);
   const [deleting, setDeleting] = useState<Project | null>(null);
   const [deletingTicket, setDeletingTicket] = useState<Ticket | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = usePersistentState<string[]>("jottr.sidebar.expanded", []);
 
   const boards = useBoards().data ?? [];
@@ -45,45 +66,74 @@ function App() {
   const board = view.kind === "board" ? boards.find((b) => b.id === view.boardId) : undefined;
   const project = view.kind === "board" ? projects.find((p) => p.id === view.projectId) : undefined;
   const boardTickets = useTickets(view.kind === "board" ? view.boardId : null).data;
-  // A project is a filter over its board's tickets.
-  const tickets = useMemo(
-    () => (project ? boardTickets?.filter((t) => t.projectId === project.id) : boardTickets),
-    [boardTickets, project],
-  );
+  const inboxCount = useTickets(null).data?.length ?? 0;
+  const focusTickets = useFocus().data;
   const createProject = useCreateProject();
   const renameProject = useRenameProject();
   const deleteProject = useDeleteProject();
   const removeTicket = useDeleteTicket();
-  const inboxCount = useTickets(null).data?.length ?? 0;
   const move = useMoveTicket();
-  // Each board remembers list or board layout; the Inbox is always a list.
+  // Each board remembers list or board layout; the Inbox and My Focus are always lists.
   const [layout, setLayout] = usePersistentState<"list" | "board">(
-    `jottr.layout.${view.kind === "board" ? view.boardId : "inbox"}`,
+    `jottr.layout.${view.kind === "board" ? view.boardId : view.kind}`,
     "board",
   );
   const showBoard = view.kind === "board" && layout === "board";
 
-  const groups = useMemo(() => tickets && groupTickets(tickets, view.kind === "board"), [tickets, view.kind]);
+  // What's on screen: the view's tickets, narrowed to a project (a project is a filter
+  // over its board), then by the active filters.
+  const tickets = useMemo(() => {
+    const scoped =
+      view.kind === "focus"
+        ? focusTickets
+        : project
+          ? boardTickets?.filter((t) => t.projectId === project.id)
+          : boardTickets;
+    return scoped && applyFilters(scoped, filters);
+  }, [view.kind, focusTickets, boardTickets, project, filters]);
+
+  const groups = useMemo(
+    () => tickets && (view.kind === "focus" ? focusGroups(tickets) : groupTickets(tickets, view.kind === "board")),
+    [tickets, view.kind],
+  );
   // The order J/K follow on the ticket page matches what's on screen.
   const order = useMemo(
     () => (showBoard ? boardColumns(tickets ?? []) : (groups ?? [])).flatMap((g) => g.tickets),
     [showBoard, tickets, groups],
   );
+  const activeTicket = order.find((t) => t.id === activeId);
 
   // While a moved ticket travels between lists it's briefly in neither; keep showing it.
   const lastOpen = useRef<Ticket | null>(null);
   const openTicket = order.find((t) => t.id === openId) ?? (lastOpen.current?.id === openId ? lastOpen.current : null);
   lastOpen.current = openTicket;
+  // What ticket actions (S, P, ⌘⇧C, …) apply to.
+  const target = openTicket ?? activeTicket;
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 1600);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   function navigate(next: View) {
     setView(next);
     setActiveId(null);
     setOpenId(null);
+    setFilters(NO_FILTERS);
   }
 
   function open(ticket: Ticket) {
     setActiveId(ticket.id);
     setOpenId(ticket.id);
+  }
+
+  /** Opens a ticket from anywhere (e.g. search) on its own board, or in the Inbox. */
+  function openAnywhere(ticket: Ticket) {
+    navigate(ticket.boardId ? { kind: "board", boardId: ticket.boardId } : { kind: "inbox" });
+    // Show it straight away, before its board's tickets have loaded.
+    lastOpen.current = ticket;
+    open(ticket);
   }
 
   function step(delta: 1 | -1) {
@@ -93,11 +143,14 @@ function App() {
 
   function moveTicket(ticket: Ticket, to: Destination) {
     move.mutate({ ticket, to });
-    const staysInView = to.boardId === ticket.boardId && (!project || to.projectId === project.id);
+    // My Focus spans every board, so a move never takes a ticket out of it.
+    const staysInView =
+      view.kind === "focus" || (to.boardId === ticket.boardId && (!project || to.projectId === project.id));
     if (staysInView) return;
     if (ticket.id === openId) {
       // An open ticket travels with you to where it went.
       setView(to.boardId ? { kind: "board", boardId: to.boardId, projectId: to.projectId ?? undefined } : { kind: "inbox" });
+      setFilters(NO_FILTERS);
     } else if (ticket.id === activeId) {
       // In the list, the selection passes to a neighbour.
       const i = order.findIndex((t) => t.id === ticket.id);
@@ -113,35 +166,140 @@ function App() {
     if (ticket.id === activeId || ticket.id === openId) setActiveId((order[i + 1] ?? order[i - 1])?.id ?? null);
   }
 
+  function copyId(ticket: Ticket) {
+    const text = ticketKey(ticket) ?? ticket.title;
+    navigator.clipboard.writeText(text).then(
+      () => setToast(`Copied ${text}`),
+      () => setToast("Couldn't copy to the clipboard"),
+    );
+  }
+
+  const toggleLayout = () => view.kind === "board" && setLayout(showBoard ? "list" : "board");
+
   useShortcuts({
     c: () => setCreating("backlog"),
-    "mod+backspace": () => {
-      const target = openTicket ?? order.find((t) => t.id === activeId);
-      if (target) setDeletingTicket(target);
-    },
+    "mod+k": () => setCommandMenu("all"),
+    "/": () => setCommandMenu("search"),
+    "?": () => setShowShortcuts(true),
+    f: () => !openTicket && setFiltering(true),
+    "mod+shift+c": () => target && copyId(target),
+    "mod+backspace": () => target && setDeletingTicket(target),
     "g i": () => navigate({ kind: "inbox" }),
+    "g f": () => navigate({ kind: "focus" }),
     "g b": () => boards.length > 0 && setSwitchingBoard(true),
     "g p": () => projects.some((p) => p.boardId === board?.id) && setSwitchingProject(true),
     "mod+\\": () => setSidebarOpen((o) => !o),
-    "mod+b": () => view.kind === "board" && setLayout(showBoard ? "list" : "board"),
+    "mod+b": toggleLayout,
   });
 
-  const position = openTicket ? order.findIndex((t) => t.id === openTicket.id) : -1;
-  const scopeLabel = (
-    <>
-      {board && <span className={`size-2 rounded-sm ${SWATCH_BG[board.color]}`} />}
-      {board ? board.name : "Inbox"}
-      {project && (
-        <>
-          <span className="text-fg-quaternary">/</span>
+  // ⌘K. Ticket actions reuse the views' own shortcuts, so they behave exactly like the keys.
+  const commands: Command[] = [];
+  if (target) {
+    const ticketCommand = (id: string, label: string, shortcut: string, run: () => void, keywords?: string) =>
+      commands.push({ id, label, group: ticketKey(target) ?? "Ticket", shortcut, run, keywords });
+    if (!openTicket) ticketCommand("open", "Open ticket", "↵", () => open(target));
+    ticketCommand("status", "Change status…", "S", () => runShortcut("s"));
+    ticketCommand("priority", "Change priority…", "P", () => runShortcut("p"));
+    ticketCommand("labels", "Labels…", "L", () => runShortcut("l"), "tag");
+    ticketCommand("due", "Set due date…", "D", () => runShortcut("d"), "deadline");
+    ticketCommand("move", "Move to board or project…", "M", () => runShortcut("m"));
+    if (!openTicket) {
+      ticketCommand("next-status", "Move to next status", "]", () => runShortcut("]"), "advance forward");
+      ticketCommand("prev-status", "Move to previous status", "[", () => runShortcut("["), "back");
+    }
+    ticketCommand("copy", "Copy ticket ID", "⌘ ⇧ C", () => copyId(target), "clipboard");
+    ticketCommand("delete", "Delete ticket…", "⌘ ⌫", () => setDeletingTicket(target), "remove");
+  }
+  commands.push(
+    { id: "new-ticket", label: "New ticket", group: "Create", shortcut: "C", icon: <PlusIcon />, run: () => setCreating("backlog") },
+    { id: "new-board", label: "New board", group: "Create", icon: <PlusIcon />, run: () => setCreatingBoard(true) },
+  );
+  if (board) {
+    commands.push({
+      id: "new-project",
+      label: `New project in ${board.name}`,
+      group: "Create",
+      icon: <PlusIcon />,
+      run: () => setNaming({ boardId: board.id }),
+    });
+  }
+  commands.push(
+    { id: "go-inbox", label: "Go to Inbox", group: "Go to", shortcut: "G I", run: () => navigate({ kind: "inbox" }) },
+    { id: "go-focus", label: "Go to My Focus", group: "Go to", shortcut: "G F", run: () => navigate({ kind: "focus" }) },
+    ...boards.map(
+      (b): Command => ({
+        id: `go-${b.id}`,
+        label: `Go to ${b.name}`,
+        group: "Go to",
+        keywords: `board ${b.key}`,
+        icon: <span className={`size-2 rounded-sm ${SWATCH_BG[b.color]}`} />,
+        run: () => navigate({ kind: "board", boardId: b.id }),
+      }),
+    ),
+    ...projects.map(
+      (p): Command => ({
+        id: `go-${p.id}`,
+        label: `Go to ${p.name}`,
+        group: "Go to",
+        keywords: `project ${boards.find((b) => b.id === p.boardId)?.name ?? ""}`,
+        icon: (
           <span className="text-fg-tertiary">
             <ProjectIcon />
           </span>
-          {project.name}
-        </>
-      )}
-    </>
+        ),
+        run: () => navigate({ kind: "board", boardId: p.boardId, projectId: p.id }),
+      }),
+    ),
   );
+  if (!openTicket) {
+    commands.push({ id: "filter", label: "Filter…", group: "View", shortcut: "F", run: () => setFiltering(true) });
+  }
+  if (view.kind === "board") {
+    commands.push({
+      id: "layout",
+      label: showBoard ? "Switch to list view" : "Switch to board view",
+      group: "View",
+      shortcut: "⌘ B",
+      keywords: "kanban layout",
+      run: toggleLayout,
+    });
+  }
+  commands.push(
+    { id: "sidebar", label: "Toggle sidebar", group: "View", shortcut: "⌘ \\", run: () => setSidebarOpen((o) => !o) },
+    { id: "shortcuts", label: "Keyboard shortcuts", group: "Help", shortcut: "?", keywords: "keys help", run: () => setShowShortcuts(true) },
+  );
+
+  const position = openTicket ? order.findIndex((t) => t.id === openTicket.id) : -1;
+  const scopeLabel =
+    view.kind === "focus" ? (
+      "My Focus"
+    ) : (
+      <>
+        {board && <span className={`size-2 rounded-sm ${SWATCH_BG[board.color]}`} />}
+        {board ? board.name : "Inbox"}
+        {project && (
+          <>
+            <span className="text-fg-quaternary">/</span>
+            <span className="text-fg-tertiary">
+              <ProjectIcon />
+            </span>
+            {project.name}
+          </>
+        )}
+      </>
+    );
+  const activeFilters = filterCount(filters);
+
+  const empty =
+    activeFilters > 0
+      ? { title: "Nothing matches these filters", action: { label: "Clear filters", onClick: () => setFilters(NO_FILTERS) } }
+      : view.kind === "focus"
+        ? { title: "Nothing needs your focus", hint: "to capture a ticket" }
+        : project
+          ? { title: "No tickets in this project", hint: "to create one" }
+          : board
+            ? { title: "No tickets yet", hint: "to create a ticket" }
+            : { title: "Inbox is empty", hint: "to capture a ticket" };
 
   return (
     <div className="flex h-full select-none">
@@ -151,6 +309,7 @@ function App() {
           projects={projects}
           view={view}
           inboxCount={inboxCount}
+          focusCount={focusTickets?.length ?? 0}
           expanded={expanded}
           onToggle={(id) => setExpanded((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))}
           onNavigate={navigate}
@@ -179,7 +338,7 @@ function App() {
                 {ticketKey(openTicket) ?? "Ticket"}
               </span>
               <span className="pointer-events-none ml-auto font-mono text-[11px] text-fg-tertiary">
-                {position + 1} / {order.length}
+                {position >= 0 ? `${position + 1} / ${order.length}` : ""}
               </span>
               <HeaderButton title="Previous · K" disabled={position <= 0} onClick={() => step(-1)}>
                 <ChevronUpDownIcon direction="up" />
@@ -191,8 +350,23 @@ function App() {
           ) : (
             <>
               <span className="pointer-events-none flex items-center gap-2 font-medium">{scopeLabel}</span>
+              <span className="pointer-events-none flex-1" />
+              <button
+                type="button"
+                title="Filter · F"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setFiltering(true)}
+                className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium ${
+                  activeFilters > 0
+                    ? "border-line-strong text-fg"
+                    : "border-line text-fg-tertiary hover:text-fg"
+                }`}
+              >
+                Filter
+                {activeFilters > 0 && <span className="font-mono text-[11px] text-fg-secondary">{activeFilters}</span>}
+              </button>
               {view.kind === "board" && (
-                <div className="ml-auto flex rounded-md border border-line p-px">
+                <div className="flex rounded-md border border-line p-px">
                   {(["list", "board"] as const).map((option) => (
                     <button
                       key={option}
@@ -214,13 +388,22 @@ function App() {
                 title="New ticket · C"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setCreating("backlog")}
-                className={`${view.kind === "board" ? "ml-2" : "ml-auto"} h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-on-accent hover:bg-accent-hover`}
+                className="ml-1 h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-on-accent hover:bg-accent-hover"
               >
                 New ticket
               </button>
             </>
           )}
         </header>
+
+        {!openTicket && (
+          <FilterBar
+            filters={filters}
+            onChange={setFilters}
+            onEdit={() => setFiltering(true)}
+            projects={projects.filter((p) => p.boardId === board?.id)}
+          />
+        )}
 
         {openTicket ? (
           <TicketPage
@@ -249,7 +432,7 @@ function App() {
           />
         ) : (
           <TicketList
-            key={view.kind === "board" ? `${view.boardId}:${view.projectId ?? ""}` : "inbox"}
+            key={view.kind === "board" ? `${view.boardId}:${view.projectId ?? ""}` : view.kind}
             groups={groups}
             boards={boards}
             projects={projects}
@@ -260,17 +443,34 @@ function App() {
             onCreate={setCreating}
             onMove={moveTicket}
             onDelete={setDeletingTicket}
-            empty={
-              project
-                ? { title: "No tickets in this project", hint: "to create one" }
-                : board
-                ? { title: "No tickets yet", hint: "to create a ticket" }
-                : { title: "Inbox is empty", hint: "to capture a ticket" }
-            }
+            empty={empty}
           />
         )}
       </main>
 
+      {toast && (
+        <div className="pointer-events-none fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-lg border border-line bg-surface-elevated px-3 py-2 text-fg-secondary shadow-2xl shadow-black/50">
+          {toast}
+        </div>
+      )}
+
+      <CommandMenu
+        open={commandMenu !== null}
+        searchOnly={commandMenu === "search"}
+        onOpenChange={(o) => !o && setCommandMenu(null)}
+        commands={commands}
+        context={target ? (ticketKey(target) ?? target.title) : undefined}
+        boards={boards}
+        onOpenTicket={openAnywhere}
+      />
+      <FilterMenu
+        open={filtering}
+        onOpenChange={setFiltering}
+        filters={filters}
+        onChange={setFilters}
+        projects={board && !project ? projects.filter((p) => p.boardId === board.id) : null}
+      />
+      <ShortcutSheet open={showShortcuts} onOpenChange={setShowShortcuts} />
       <CreateTicketDialog
         status={creating}
         board={board}
