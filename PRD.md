@@ -110,6 +110,8 @@ Board  (e.g. Engineering, Marketing, Life)
   - **Labels**: shared by every board. Each has a name (unique, ignoring case) and a colour from the swatch set.
   - **Due date**
   - **Project**
+- New tickets go to the bottom of their status group. Changing a ticket's status, moving it to another board, or restoring it puts it at the top.
+- **Urgent tickets are pinned** above the rest of their status group, in lists and board columns, until they're Done or Canceled. Manual order applies within each side. Marking a ticket Urgent, or clearing it, puts it at the top of its new side. Dragging can't cross between the two; a card dropped on the wrong side snaps back to its own.
 
 ### 3.4 Inbox
 - A single, global holding area for tickets that aren't on a board yet.
@@ -136,7 +138,7 @@ Standard views:
 
 ### 5.2 Quick capture
 - A system-wide hotkey opens a small floating input from anywhere on macOS, without switching apps.
-- Type a ticket title and press Enter to add it to the **top of the Inbox** (see §3.4).
+- Type a ticket title and press Enter to add it to the **bottom of the Inbox** (see §3.4).
 
 ### 5.3 Search
 - Instant search across all boards, projects and tickets (titles and descriptions), using SQLite FTS5. Each word matches as a prefix. Typing a ticket ID like `ENG-42` puts that ticket first.

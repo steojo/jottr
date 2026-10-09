@@ -28,7 +28,7 @@ pub async fn list_tickets(db: State<'_, Db>, board_id: Option<String>) -> CmdRes
     store::list_tickets(&*db.0.lock().map_err(err)?, board_id)
 }
 
-/// New tickets go to the top of their status group.
+/// New tickets go to the bottom of their status group.
 #[tauri::command]
 #[specta::specta]
 pub async fn create_ticket(db: State<'_, Db>, input: NewTicket) -> CmdResult<Ticket> {

@@ -39,7 +39,8 @@ Rust owns all data; the UI never touches the database directly.
 - **Ticket rules (`store.rs`):**
   - Inbox tickets have `board_id = NULL` and no number.
   - Numbers are per board, from `boards.next_ticket_number`, and are reassigned when a ticket moves boards.
-  - New tickets and status changes go to the top of their status group (`MIN(position) - 1`).
+  - New tickets go to the bottom of their status group (`MAX(position) + 1`). Status changes, moves and restores go to the top (`MIN(position) - 1`).
+  - Urgent tickets are pinned first in their status group until finished (`isPinned`/`byListOrder` in `src/lib/tickets.ts`; Board drops are placed by `dropPosition`). Changing to or from Urgent moves the ticket to the top of its group in `update_ticket`.
   - Setting `done` stamps `completed_at`.
 - **UI data (`src/lib/queries.ts`):** TanStack Query, with `staleTime: Infinity` since all data is local. Mutations update the cache optimistically and roll back on error. `applyPatch` in `src/lib/tickets.ts` mirrors `update_ticket` and must stay in sync with it.
 - **Labels** are global (not per board). `Ticket.labelIds` comes from a `GROUP_CONCAT` subquery in `Ticket::COLUMNS`, and the UI resolves names and colours from `useLabels()`. `set_ticket_label` adds or removes one label at a time.

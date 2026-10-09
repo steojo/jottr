@@ -21,12 +21,12 @@ import { usePersistentState } from "../lib/storage";
 import {
   adjacentStatus,
   boardColumns,
+  dropPosition,
   formatDue,
   groupByCompletionDay,
   isFinished,
   isOverdue,
   patch,
-  positionBetween,
   statusLabel,
   ticketKey,
   type Destination,
@@ -178,8 +178,7 @@ export function Board({
     const to = list.indexOf(String(over.id));
     if (to !== -1 && from !== to) list = arrayMove(list, from, to);
 
-    const i = list.indexOf(ticket.id);
-    const position = positionBetween(byId.get(list[i - 1]), byId.get(list[i + 1]));
+    const position = dropPosition(list, ticket.id, status, byId);
     if (status !== ticket.status || position !== ticket.position) {
       reposition.mutate({ ticket, status, position });
     }

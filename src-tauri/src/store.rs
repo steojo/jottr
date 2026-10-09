@@ -10,8 +10,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::db::{new_id, now};
 use crate::models::{
-    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Settings, Status,
-    Ticket, TicketPatch,
+    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Priority, Project, Settings,
+    Status, Ticket, TicketPatch,
 };
 
 pub type CmdResult<T> = Result<T, String>;
@@ -45,6 +45,17 @@ fn get_ticket(conn: &Connection, id: &str) -> CmdResult<Ticket> {
 fn top_position(conn: &Connection, board_id: Option<&str>, status: Status) -> CmdResult<f64> {
     conn.query_row(
         "SELECT COALESCE(MIN(position), 1) - 1 FROM tickets
+         WHERE board_id IS ?1 AND status = ?2 AND archived_at IS NULL",
+        params![board_id, status],
+        |row| row.get(0),
+    )
+    .map_err(err)
+}
+
+/// Position that sorts below every ticket currently in the same board and status.
+fn bottom_position(conn: &Connection, board_id: Option<&str>, status: Status) -> CmdResult<f64> {
+    conn.query_row(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM tickets
          WHERE board_id IS ?1 AND status = ?2 AND archived_at IS NULL",
         params![board_id, status],
         |row| row.get(0),
@@ -137,7 +148,7 @@ pub fn list_tickets(conn: &Connection, board_id: Option<String>) -> CmdResult<Ve
     tickets.collect::<Result<_, _>>().map_err(err)
 }
 
-/// New tickets go to the top of their status group.
+/// New tickets go to the bottom of their status group.
 pub fn create_ticket(conn: &mut Connection, input: NewTicket) -> CmdResult<Ticket> {
     let title = input.title.trim();
     if title.is_empty() {
@@ -148,7 +159,7 @@ pub fn create_ticket(conn: &mut Connection, input: NewTicket) -> CmdResult<Ticke
     let board_id = input.board_id.as_deref();
     check_project(&tx, board_id, input.project_id.as_deref())?;
     let number = board_id.map(|id| next_number(&tx, id)).transpose()?;
-    let position = top_position(&tx, board_id, input.status)?;
+    let position = bottom_position(&tx, board_id, input.status)?;
     let ts = now();
     let completed_at = (input.status == Status::Done).then_some(ts);
     let id = new_id();
@@ -176,9 +187,9 @@ pub fn create_ticket(conn: &mut Connection, input: NewTicket) -> CmdResult<Ticke
 
 pub fn update_ticket(conn: &mut Connection, id: String, patch: TicketPatch) -> CmdResult<Ticket> {
     let tx = conn.transaction().map_err(err)?;
-    let (board_id, status): (Option<String>, Status) = tx
-        .query_row("SELECT board_id, status FROM tickets WHERE id = ?1", [&id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
+    let (board_id, status, priority): (Option<String>, Status, Priority) = tx
+        .query_row("SELECT board_id, status, priority FROM tickets WHERE id = ?1", [&id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
         })
         .optional()
         .map_err(err)?
@@ -205,12 +216,19 @@ pub fn update_ticket(conn: &mut Connection, id: String, patch: TicketPatch) -> C
         .map_err(err)?;
     }
 
-    if let Some(priority) = patch.priority {
+    if let Some(new_priority) = patch.priority {
         tx.execute(
             "UPDATE tickets SET priority = ?2, updated_at = ?3 WHERE id = ?1",
-            params![id, priority, ts],
+            params![id, new_priority, ts],
         )
         .map_err(err)?;
+        // Urgent tickets are pinned above the rest of their group (the UI sorts them first),
+        // so pinning or unpinning puts the ticket at the top of its new side.
+        if (new_priority == Priority::Urgent) != (priority == Priority::Urgent) {
+            let position = top_position(&tx, board_id.as_deref(), status)?;
+            tx.execute("UPDATE tickets SET position = ?2 WHERE id = ?1", params![id, position])
+                .map_err(err)?;
+        }
     }
 
     // A status change moves the ticket to the top of its new group, and brings it
@@ -809,7 +827,6 @@ pub fn delete_checklist_item(conn: &Connection, id: String) -> CmdResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::Priority;
 
     fn db() -> Connection {
         crate::db::open_in_memory().unwrap()
@@ -853,11 +870,11 @@ mod tests {
     }
 
     #[test]
-    fn new_tickets_go_to_the_top_of_their_group() {
+    fn new_tickets_go_to_the_bottom_of_their_group() {
         let mut conn = db();
         let first = ticket(&mut conn, None, Status::Backlog);
         let second = ticket(&mut conn, None, Status::Backlog);
-        assert!(second.position < first.position);
+        assert!(second.position > first.position);
     }
 
     #[test]
@@ -869,6 +886,21 @@ mod tests {
         assert!(create_board(&conn, new("Digits", "1AB")).is_err());
         assert!(create_board(&conn, new("Long", "TOOLONG")).is_err());
         assert!(create_board(&conn, new("  ", "OK")).is_err());
+    }
+
+    #[test]
+    fn pinning_or_unpinning_urgent_moves_to_the_top() {
+        let mut conn = db();
+        let first = ticket(&mut conn, None, Status::Backlog);
+        let t = ticket(&mut conn, None, Status::Backlog);
+        let set = |p| TicketPatch { title: None, description: None, status: None, priority: Some(p) };
+
+        let pinned = update_ticket(&mut conn, t.id.clone(), set(Priority::Urgent)).unwrap();
+        assert!(pinned.position < first.position);
+        let unpinned = update_ticket(&mut conn, t.id.clone(), set(Priority::None)).unwrap();
+        assert!(unpinned.position < pinned.position);
+        let high = update_ticket(&mut conn, first.id.clone(), set(Priority::High)).unwrap();
+        assert_eq!(high.position, first.position, "other priority changes keep their place");
     }
 
     #[test]
