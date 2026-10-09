@@ -1,9 +1,20 @@
-import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { listen, TauriEvent } from "@tauri-apps/api/event";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Board, Project, Ticket } from "../bindings";
-import { useLabels, useUpdateTicket } from "../lib/queries";
+import { useLabels, useUpdateTicket, type AttachSource } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
-import { PRIORITIES, SWATCH_BG, formatDue, isOverdue, patch, statusLabel, type Destination } from "../lib/tickets";
+import {
+  PRIORITIES,
+  SWATCH_BG,
+  formatDue,
+  isOverdue,
+  patch,
+  statusLabel,
+  ticketKey,
+  type Destination,
+} from "../lib/tickets";
+import { Attachments } from "./Attachments";
 import { Checklist } from "./Checklist";
 import { LabelChip } from "./Labels";
 import { PriorityIcon, ProjectIcon, StatusIcon } from "./icons";
@@ -22,6 +33,8 @@ export function TicketPage({
   onMove,
   onDelete,
   onRestore,
+  onAttach,
+  onPickFiles,
 }: {
   ticket: Ticket;
   boards: Board[];
@@ -32,8 +45,15 @@ export function TicketPage({
   onMove: (ticket: Ticket, to: Destination) => void;
   onDelete: (ticket: Ticket) => void;
   onRestore: (ticket: Ticket) => void;
+  onAttach: (ticket: Ticket, source: AttachSource) => void;
+  /** Opens the file picker to attach files. */
+  onPickFiles: (ticket: Ticket) => void;
 }) {
   const [picker, setPicker] = useState<PickerKind | null>(null);
+  // Files are being dragged over the window.
+  const [dropping, setDropping] = useState(false);
+  const latest = useRef({ ticket, onAttach });
+  latest.current = { ticket, onAttach };
   const update = useUpdateTicket();
   const board = boards.find((b) => b.id === ticket.boardId);
   const project = projects.find((p) => p.id === ticket.projectId);
@@ -50,8 +70,42 @@ export function TicketPage({
     m: () => setPicker("move"),
   });
 
+  // Files dropped anywhere on the window, or pasted anywhere on the page, are attached.
+  useEffect(() => {
+    // Listened to directly: the webview module's wrapper for these adds ~25 KB.
+    type Drag = { paths: string[] };
+    const listeners = [
+      listen<Drag>(TauriEvent.DRAG_ENTER, (e) => setDropping(e.payload.paths.length > 0)),
+      listen(TauriEvent.DRAG_LEAVE, () => setDropping(false)),
+      listen<Drag>(TauriEvent.DRAG_DROP, ({ payload }) => {
+        setDropping(false);
+        if (payload.paths.length > 0) latest.current.onAttach(latest.current.ticket, { paths: payload.paths });
+      }),
+    ];
+
+    // Capturing, so a pasted image is attached before the description editor sees it.
+    function onPaste(e: ClipboardEvent) {
+      const files = [...(e.clipboardData?.files ?? [])];
+      if (files.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      latest.current.onAttach(latest.current.ticket, { files });
+    }
+    window.addEventListener("paste", onPaste, true);
+
+    return () => {
+      for (const unlisten of listeners) void unlisten.then((stop) => stop());
+      window.removeEventListener("paste", onPaste, true);
+    };
+  }, []);
+
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1">
+      {dropping && (
+        <div className="pointer-events-none absolute inset-3 z-20 flex items-center justify-center rounded-xl border border-dashed border-line-strong bg-surface/80">
+          <span className="font-medium text-fg-secondary">Drop to attach to {ticketKey(ticket) ?? "this ticket"}</span>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         {/* Keyed by ticket so moving with J/K remounts the editors, saving any pending edits. */}
         <div key={ticket.id} className="mx-auto flex max-w-[720px] flex-col gap-6 px-10 pt-8 pb-24">
@@ -80,6 +134,7 @@ export function TicketPage({
             />
           </Suspense>
           <Checklist ticket={ticket} />
+          <Attachments ticket={ticket} onAdd={() => onPickFiles(ticket)} />
         </div>
       </div>
 

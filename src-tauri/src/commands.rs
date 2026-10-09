@@ -1,8 +1,10 @@
+use std::process::Command;
+
 use tauri::State;
 
-use crate::db::Db;
+use crate::db::{AttachmentsDir, Db};
 use crate::models::{
-    Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Settings, Status,
+    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Settings, Status,
     Ticket, TicketPatch,
 };
 use crate::store::{self, err, CmdResult};
@@ -159,8 +161,8 @@ pub async fn set_ticket_label(
 /// Permanently deletes a ticket with its checklist and labels.
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_ticket(db: State<'_, Db>, id: String) -> CmdResult<()> {
-    store::delete_ticket(&*db.0.lock().map_err(err)?, id)
+pub async fn delete_ticket(db: State<'_, Db>, dir: State<'_, AttachmentsDir>, id: String) -> CmdResult<()> {
+    store::delete_ticket(&*db.0.lock().map_err(err)?, &dir.0, id)
 }
 
 /// Tickets on every board and in the Inbox, best matches first.
@@ -209,4 +211,68 @@ pub async fn get_settings(db: State<'_, Db>) -> CmdResult<Settings> {
 #[specta::specta]
 pub async fn update_settings(db: State<'_, Db>, settings: Settings) -> CmdResult<Settings> {
     store::update_settings(&*db.0.lock().map_err(err)?, settings)
+}
+
+/// A ticket's attachments, oldest first.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_attachments(
+    db: State<'_, Db>,
+    dir: State<'_, AttachmentsDir>,
+    ticket_id: String,
+) -> CmdResult<Vec<Attachment>> {
+    store::list_attachments(&*db.0.lock().map_err(err)?, &dir.0, ticket_id)
+}
+
+/// Copies files (by path, from the file picker or a drop) and attaches them to a ticket.
+#[tauri::command]
+#[specta::specta]
+pub async fn add_attachments(
+    db: State<'_, Db>,
+    dir: State<'_, AttachmentsDir>,
+    ticket_id: String,
+    paths: Vec<String>,
+) -> CmdResult<Vec<Attachment>> {
+    store::add_attachments(&*db.0.lock().map_err(err)?, &dir.0, ticket_id, paths)
+}
+
+/// Attaches pasted data, e.g. a screenshot. `data` is base64.
+#[tauri::command]
+#[specta::specta]
+pub async fn add_attachment_data(
+    db: State<'_, Db>,
+    dir: State<'_, AttachmentsDir>,
+    ticket_id: String,
+    name: String,
+    data: String,
+) -> CmdResult<Attachment> {
+    store::add_attachment_data(&*db.0.lock().map_err(err)?, &dir.0, ticket_id, name, data)
+}
+
+/// Deletes an attachment and its file.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_attachment(db: State<'_, Db>, dir: State<'_, AttachmentsDir>, id: String) -> CmdResult<()> {
+    store::delete_attachment(&*db.0.lock().map_err(err)?, &dir.0, id)
+}
+
+/// Opens an attachment in its default app, or shows it in Finder when `reveal` is set.
+#[tauri::command]
+#[specta::specta]
+pub async fn open_attachment(
+    db: State<'_, Db>,
+    dir: State<'_, AttachmentsDir>,
+    id: String,
+    reveal: bool,
+) -> CmdResult<()> {
+    let path = store::attachment_path(&*db.0.lock().map_err(err)?, &dir.0, id)?;
+    let mut open = Command::new("open");
+    if reveal {
+        open.arg("-R");
+    }
+    let status = open.arg(path).status().map_err(err)?;
+    if !status.success() {
+        return Err("Couldn't open the file".into());
+    }
+    Ok(())
 }

@@ -1,10 +1,16 @@
 //! Data operations. Each takes a connection so it can be tested without Tauri.
 
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::db::{new_id, now};
 use crate::models::{
-    Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Settings, Status,
+    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Settings, Status,
     Ticket, TicketPatch,
 };
 
@@ -261,13 +267,13 @@ pub fn move_ticket(
     get_ticket(conn, &id)
 }
 
-/// Permanently deletes a ticket with its checklist and labels. The UI confirms first.
-pub fn delete_ticket(conn: &Connection, id: String) -> CmdResult<()> {
-    let deleted = conn.execute("DELETE FROM tickets WHERE id = ?1", [id]).map_err(err)?;
+/// Permanently deletes a ticket with its checklist, labels and attachments. The UI confirms first.
+pub fn delete_ticket(conn: &Connection, attachments: &Path, id: String) -> CmdResult<()> {
+    let deleted = conn.execute("DELETE FROM tickets WHERE id = ?1", [&id]).map_err(err)?;
     if deleted == 0 {
         return Err("Ticket not found".into());
     }
-    Ok(())
+    remove_dir(&attachments.join(&id))
 }
 
 /// Places a ticket at an exact status and position, e.g. after a drag and drop.
@@ -591,6 +597,126 @@ pub fn update_settings(conn: &Connection, settings: Settings) -> CmdResult<Setti
     get_settings(conn)
 }
 
+fn get_attachment(conn: &Connection, root: &Path, id: &str) -> CmdResult<Attachment> {
+    conn.query_row(
+        &format!("SELECT {} FROM attachments WHERE id = ?1", Attachment::COLUMNS),
+        [id],
+        |row| Attachment::from_row(row, root),
+    )
+    .optional()
+    .map_err(err)?
+    .ok_or_else(|| "Attachment not found".to_string())
+}
+
+/// Removes a folder and everything in it; a missing folder is fine.
+fn remove_dir(dir: &Path) -> CmdResult<()> {
+    match fs::remove_dir_all(dir) {
+        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(err(e)),
+        _ => Ok(()),
+    }
+}
+
+/// The last part of a path or file name, so a name can never point outside its folder.
+fn file_name(name: &str) -> String {
+    Path::new(name.trim())
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file")
+        .to_string()
+}
+
+/// A ticket's attachments, oldest first. `root` is the attachments folder.
+pub fn list_attachments(conn: &Connection, root: &Path, ticket_id: String) -> CmdResult<Vec<Attachment>> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {} FROM attachments WHERE ticket_id = ?1 ORDER BY created_at, id",
+            Attachment::COLUMNS
+        ))
+        .map_err(err)?;
+    let attachments = stmt.query_map([ticket_id], |row| Attachment::from_row(row, root)).map_err(err)?;
+    attachments.collect::<Result<_, _>>().map_err(err)
+}
+
+/// Writes a new attachment file with `write`, then records it. Nothing is left behind on failure.
+fn store_attachment(
+    conn: &Connection,
+    root: &Path,
+    ticket_id: &str,
+    name: &str,
+    write: impl FnOnce(&Path) -> io::Result<()>,
+) -> CmdResult<Attachment> {
+    let exists: bool = conn
+        .query_row("SELECT EXISTS (SELECT 1 FROM tickets WHERE id = ?1)", [ticket_id], |row| row.get(0))
+        .map_err(err)?;
+    if !exists {
+        return Err("Ticket not found".into());
+    }
+    let id = new_id();
+    let dir = root.join(ticket_id).join(&id);
+    let path = dir.join(name);
+    let saved = fs::create_dir_all(&dir)
+        .and_then(|()| write(&path))
+        .and_then(|()| fs::metadata(&path))
+        .map_err(err)
+        .and_then(|meta| {
+            conn.execute(
+                "INSERT INTO attachments (id, ticket_id, name, size, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, ticket_id, name, meta.len() as i64, now()],
+            )
+            .map_err(err)
+        });
+    if let Err(e) = saved {
+        let _ = fs::remove_dir_all(&dir);
+        return Err(e);
+    }
+    get_attachment(conn, root, &id)
+}
+
+/// Copies files into the attachments folder and attaches them to a ticket. Folders are refused.
+pub fn add_attachments(conn: &Connection, root: &Path, ticket_id: String, paths: Vec<String>) -> CmdResult<Vec<Attachment>> {
+    let sources: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+    for source in &sources {
+        let name = file_name(&source.to_string_lossy());
+        if source.is_dir() {
+            return Err(format!("“{name}” is a folder. Only files can be attached."));
+        }
+        if !source.is_file() {
+            return Err(format!("“{name}” couldn't be found"));
+        }
+    }
+    sources
+        .iter()
+        .map(|source| {
+            let name = file_name(&source.to_string_lossy());
+            store_attachment(conn, root, &ticket_id, &name, |dest| fs::copy(source, dest).map(|_| ()))
+        })
+        .collect()
+}
+
+/// Attaches pasted data, e.g. a screenshot from the clipboard. `data` is base64.
+pub fn add_attachment_data(
+    conn: &Connection,
+    root: &Path,
+    ticket_id: String,
+    name: String,
+    data: String,
+) -> CmdResult<Attachment> {
+    let bytes = BASE64.decode(data).map_err(err)?;
+    store_attachment(conn, root, &ticket_id, &file_name(&name), |dest| fs::write(dest, &bytes))
+}
+
+/// Deletes an attachment and its file.
+pub fn delete_attachment(conn: &Connection, root: &Path, id: String) -> CmdResult<()> {
+    let attachment = get_attachment(conn, root, &id)?;
+    conn.execute("DELETE FROM attachments WHERE id = ?1", [&id]).map_err(err)?;
+    remove_dir(&root.join(&attachment.ticket_id).join(&id))
+}
+
+/// Where an attachment's file is stored.
+pub fn attachment_path(conn: &Connection, root: &Path, id: String) -> CmdResult<String> {
+    Ok(get_attachment(conn, root, &id)?.path)
+}
+
 fn is_valid_date(date: &str) -> bool {
     let b = date.as_bytes();
     b.len() == 10
@@ -687,6 +813,11 @@ mod tests {
 
     fn db() -> Connection {
         crate::db::open_in_memory().unwrap()
+    }
+
+    /// A fresh, empty attachments folder.
+    fn temp_root() -> PathBuf {
+        std::env::temp_dir().join(format!("jottr-test-{}", new_id()))
     }
 
     fn board(conn: &Connection, key: &str) -> Board {
@@ -922,13 +1053,13 @@ mod tests {
         let bug = create_label(&conn, "bug".into(), Color::Red).unwrap();
         set_ticket_label(&conn, t.id.clone(), bug.id.clone(), true).unwrap();
 
-        delete_ticket(&conn, t.id.clone()).unwrap();
+        delete_ticket(&conn, &temp_root(), t.id.clone()).unwrap();
         assert!(list_tickets(&conn, None).unwrap().is_empty());
         assert!(list_checklist(&conn, t.id.clone()).unwrap().is_empty());
         let links: i64 = conn.query_row("SELECT COUNT(*) FROM ticket_labels", [], |r| r.get(0)).unwrap();
         assert_eq!(links, 0);
         assert_eq!(list_labels(&conn).unwrap().len(), 1, "the label itself stays");
-        assert!(delete_ticket(&conn, t.id).is_err());
+        assert!(delete_ticket(&conn, &temp_root(), t.id).is_err());
     }
 
     fn titled(conn: &mut Connection, board_id: Option<&str>, title: &str, status: Status) -> Ticket {
@@ -966,7 +1097,7 @@ mod tests {
         let renamed = TicketPatch { title: Some("Forgot password".into()), description: None, status: None, priority: None };
         update_ticket(&mut conn, reset.id.clone(), renamed).unwrap();
         assert!(search_tickets(&conn, "reset".into()).unwrap().is_empty());
-        delete_ticket(&conn, reset.id).unwrap();
+        delete_ticket(&conn, &temp_root(), reset.id).unwrap();
         assert!(search_tickets(&conn, "forgot".into()).unwrap().is_empty());
     }
 
@@ -1057,5 +1188,42 @@ mod tests {
         assert_eq!((reopened.archived_at, reopened.completed_at), (None, None));
         assert!(list_archived(&conn).unwrap().is_empty());
         assert_eq!(list_tickets(&conn, Some(eng.id)).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn attachments_are_copied_listed_and_deleted_with_their_files() {
+        let mut conn = db();
+        let root = temp_root();
+        let t = ticket(&mut conn, None, Status::Backlog);
+
+        let source_dir = temp_root();
+        fs::create_dir_all(&source_dir).unwrap();
+        let source = source_dir.join("notes.txt");
+        fs::write(&source, "hello").unwrap();
+        let paths = vec![source.to_string_lossy().into_owned()];
+
+        let added = add_attachments(&conn, &root, t.id.clone(), paths.clone()).unwrap();
+        assert_eq!((added[0].name.as_str(), added[0].size), ("notes.txt", 5.0));
+        assert_eq!(fs::read_to_string(&added[0].path).unwrap(), "hello", "a copy is stored");
+        assert!(source.exists(), "the original stays put");
+
+        let pasted = add_attachment_data(&conn, &root, t.id.clone(), "../../shot.png".into(), BASE64.encode([1, 2, 3])).unwrap();
+        assert_eq!((pasted.name.as_str(), pasted.size), ("shot.png", 3.0), "names can't escape their folder");
+        assert_eq!(list_attachments(&conn, &root, t.id.clone()).unwrap().len(), 2);
+
+        delete_attachment(&conn, &root, pasted.id.clone()).unwrap();
+        assert!(!Path::new(&pasted.path).exists());
+        assert_eq!(list_attachments(&conn, &root, t.id.clone()).unwrap().len(), 1);
+
+        let folder = vec![source_dir.to_string_lossy().into_owned()];
+        assert!(add_attachments(&conn, &root, t.id.clone(), folder).is_err(), "folders are refused");
+        assert!(add_attachments(&conn, &root, "missing".into(), paths).is_err());
+        assert!(!root.join("missing").exists(), "nothing left behind");
+
+        delete_ticket(&conn, &root, t.id.clone()).unwrap();
+        assert!(!root.join(&t.id).exists(), "deleting the ticket deletes its files");
+        let rows: i64 = conn.query_row("SELECT COUNT(*) FROM attachments", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 0);
+        fs::remove_dir_all(&source_dir).unwrap();
     }
 }

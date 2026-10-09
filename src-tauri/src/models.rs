@@ -1,4 +1,6 @@
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use std::path::Path;
+
 use rusqlite::Row;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -260,5 +262,28 @@ impl Settings {
 
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Self { auto_archive: row.get(0)?, archive_after_days: row.get(1)? })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Attachment {
+    pub id: String,
+    pub ticket_id: String,
+    pub name: String,
+    /// In bytes.
+    pub size: f64,
+    /// The stored copy, shown in the UI through the asset protocol.
+    pub path: String,
+}
+
+impl Attachment {
+    pub const COLUMNS: &'static str = "id, ticket_id, name, size";
+
+    /// `root` is the attachments folder; each file sits at `<ticket id>/<id>/<name>` inside it.
+    pub fn from_row(row: &Row, root: &Path) -> rusqlite::Result<Self> {
+        let (id, ticket_id, name): (String, String, String) = (row.get(0)?, row.get(1)?, row.get(2)?);
+        let path = root.join(&ticket_id).join(&id).join(&name).to_string_lossy().into_owned();
+        Ok(Self { id, ticket_id, name, size: row.get::<_, i64>(3)? as f64, path })
     }
 }

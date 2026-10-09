@@ -42,6 +42,11 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::restore_ticket,
             commands::get_settings,
             commands::update_settings,
+            commands::list_attachments,
+            commands::add_attachments,
+            commands::add_attachment_data,
+            commands::delete_attachment,
+            commands::open_attachment,
         ])
 }
 
@@ -60,6 +65,7 @@ pub fn run() {
     export_bindings(&builder);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
@@ -70,6 +76,7 @@ pub fn run() {
                 eprintln!("auto-archive failed: {e}");
             }
             app.manage(db::Db(Mutex::new(conn)));
+            app.manage(db::AttachmentsDir(dir.join("attachments")));
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -171,10 +171,15 @@ Standard views:
 - An open ticket that's restored goes back to its board and stays open.
 
 ### 5.9 Export & backup
-- One-click export or backup of all data to a file.
+- One-click export or backup of all data to a file, including the attachments folder (§5.10).
 
 ### 5.10 Attachments
 - Attach files and images to tickets.
+- **Adding:** `U` (or "Attach files…" on the ticket page, or ⌘K) opens the macOS file picker, where several files can be chosen at once. With a ticket open, files can also be dropped anywhere on the window, or pasted with `⌘V` anywhere on the page (e.g. a screenshot). From a list, `U` attaches to the selected ticket and a toast confirms it.
+- Jottr keeps its own copy of each file in the app data folder (`attachments/`), so moving or deleting the original doesn't matter. Folders can't be attached.
+- **Ticket page:** an Attachments section below the checklist, with a tile per file: a thumbnail for images, the file type for anything else, then the name and size.
+- Clicking a tile (or `Enter`) opens the file in its default app. Right-click for Open, Show in Finder and Remove. Removing (`×` on hover, `⌫`, or the menu) asks to confirm, then deletes Jottr's copy.
+- Deleting a ticket deletes its attachments.
 
 ### 5.11 Multi-select & bulk edit (later)
 - Select multiple tickets in the list or board (`X` to select, `⌘A` to select all).
@@ -308,6 +313,7 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 | `L` | Labels |
 | `D` | Due date |
 | `M` | Move to board / project |
+| `U` | Attach files |
 | `R` | Repeat |
 | `⌘⇧C` | Copy ticket ID |
 | `A` | Restore from the Archive |

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,9 +11,13 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003_labels.sql"),
     include_str!("../migrations/0004_search.sql"),
     include_str!("../migrations/0005_settings.sql"),
+    include_str!("../migrations/0006_attachments.sql"),
 ];
 
 pub struct Db(pub Mutex<Connection>);
+
+/// The folder attachment files are copied into.
+pub struct AttachmentsDir(pub PathBuf);
 
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     init(Connection::open(path)?)

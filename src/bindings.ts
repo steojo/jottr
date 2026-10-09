@@ -51,9 +51,29 @@ export const commands = {
 	getSettings: () => __TAURI_INVOKE<Settings>("get_settings"),
 	/**  Saves the settings, then archives anything they now make due. */
 	updateSettings: (settings: Settings) => __TAURI_INVOKE<Settings>("update_settings", { settings }),
+	/**  A ticket's attachments, oldest first. */
+	listAttachments: (ticketId: string) => __TAURI_INVOKE<Attachment[]>("list_attachments", { ticketId }),
+	/**  Copies files (by path, from the file picker or a drop) and attaches them to a ticket. */
+	addAttachments: (ticketId: string, paths: string[]) => __TAURI_INVOKE<Attachment[]>("add_attachments", { ticketId, paths }),
+	/**  Attaches pasted data, e.g. a screenshot. `data` is base64. */
+	addAttachmentData: (ticketId: string, name: string, data: string) => __TAURI_INVOKE<Attachment>("add_attachment_data", { ticketId, name, data }),
+	/**  Deletes an attachment and its file. */
+	deleteAttachment: (id: string) => __TAURI_INVOKE<null>("delete_attachment", { id }),
+	/**  Opens an attachment in its default app, or shows it in Finder when `reveal` is set. */
+	openAttachment: (id: string, reveal: boolean) => __TAURI_INVOKE<null>("open_attachment", { id, reveal }),
 };
 
 /* Types */
+export type Attachment = {
+	id: string,
+	ticketId: string,
+	name: string,
+	/**  In bytes. */
+	size: number | null,
+	/**  The stored copy, shown in the UI through the asset protocol. */
+	path: string,
+};
+
 export type Board = {
 	id: string,
 	name: string,

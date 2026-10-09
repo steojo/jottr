@@ -1,3 +1,4 @@
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { Project, Status, Ticket } from "./bindings";
@@ -15,6 +16,7 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { TicketList } from "./components/TicketList";
 import { TicketPage } from "./components/TicketPage";
 import {
+  useAddAttachments,
   useArchive,
   useAutoArchive,
   useBoards,
@@ -28,6 +30,7 @@ import {
   useRestoreTicket,
   useSettings,
   useTickets,
+  type AttachSource,
 } from "./lib/queries";
 import { runShortcut, useShortcuts } from "./lib/shortcuts";
 import { usePersistentState } from "./lib/storage";
@@ -80,6 +83,7 @@ function App() {
   const archive = useArchive(view.kind === "archive");
   const settings = useSettings().data;
   const restoreTicket = useRestoreTicket();
+  const addAttachments = useAddAttachments();
   useAutoArchive();
   const createProject = useCreateProject();
   const renameProject = useRenameProject();
@@ -215,6 +219,25 @@ function App() {
     }
   }
 
+  /** From a list the files aren't on screen, so a toast confirms them. */
+  function attach(ticket: Ticket, source: AttachSource) {
+    const onPage = ticket.id === openTicket?.id;
+    addAttachments.mutate(
+      { ticket, source },
+      {
+        onSuccess: (added) =>
+          !onPage &&
+          setToast(`Attached ${added.length === 1 ? added[0].name : `${added.length} files`} to ${ticketKey(ticket) ?? "the ticket"}`),
+        onError: (error) => setToast(String(error)),
+      },
+    );
+  }
+
+  async function pickFiles(ticket: Ticket) {
+    const paths = await openFileDialog({ multiple: true, title: `Attach files to ${ticketKey(ticket) ?? ticket.title}` });
+    if (paths && paths.length > 0) attach(ticket, { paths });
+  }
+
   function copyId(ticket: Ticket) {
     const text = ticketKey(ticket) ?? ticket.title;
     navigator.clipboard.writeText(text).then(
@@ -233,6 +256,7 @@ function App() {
     "?": () => setShowShortcuts(true),
     f: () => !openTicket && view.kind !== "settings" && setFiltering(true),
     a: () => target && restore(target),
+    u: () => target && void pickFiles(target),
     "mod+shift+c": () => target && copyId(target),
     "mod+backspace": () => target && setDeletingTicket(target),
     "g i": () => navigate({ kind: "inbox" }),
@@ -259,6 +283,7 @@ function App() {
     ticketCommand("labels", "Labels…", "L", () => runShortcut("l"), "tag");
     ticketCommand("due", "Set due date…", "D", () => runShortcut("d"), "deadline");
     ticketCommand("move", "Move to board or project…", "M", () => runShortcut("m"));
+    ticketCommand("attach", "Attach files…", "U", () => void pickFiles(target), "upload image file");
     if (!openTicket) {
       ticketCommand("next-status", "Move to next status", "]", () => runShortcut("]"), "advance forward");
       ticketCommand("prev-status", "Move to previous status", "[", () => runShortcut("["), "back");
@@ -501,6 +526,8 @@ function App() {
             onMove={moveTicket}
             onDelete={setDeletingTicket}
             onRestore={restore}
+            onAttach={attach}
+            onPickFiles={(ticket) => void pickFiles(ticket)}
           />
         ) : showBoard && board ? (
           <Board
@@ -610,7 +637,7 @@ function App() {
       <ConfirmDialog
         open={deletingTicket !== null}
         title={`Delete ${deletingTicket ? (ticketKey(deletingTicket) ?? `“${deletingTicket.title}”`) : "ticket"}?`}
-        message="It'll be gone for good, along with its checklist."
+        message="It'll be gone for good, along with its checklist and attachments."
         confirmLabel="Delete"
         onClose={() => setDeletingTicket(null)}
         onConfirm={() => deletingTicket && deleteTicket(deletingTicket)}

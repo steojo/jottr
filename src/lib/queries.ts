@@ -3,6 +3,7 @@ import { useEffect } from "react";
 
 import {
   commands,
+  type Attachment,
   type ChecklistItem,
   type ChecklistPatch,
   type Color,
@@ -14,6 +15,7 @@ import {
   type Ticket,
   type TicketPatch,
 } from "../bindings";
+import { pastedName, toBase64 } from "./attachments";
 import { addDays, applyPatch, toDateKey, type Destination } from "./tickets";
 
 // Everything is local, so data is only stale when we change it ourselves.
@@ -322,7 +324,10 @@ export function useDeleteTicket() {
       return { key, previous };
     },
     onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
-    onSuccess: (_result, ticket) => qc.removeQueries({ queryKey: checklistKey(ticket.id) }),
+    onSuccess: (_result, ticket) => {
+      qc.removeQueries({ queryKey: checklistKey(ticket.id) });
+      qc.removeQueries({ queryKey: attachmentsKey(ticket.id) });
+    },
   });
 }
 
@@ -405,5 +410,46 @@ export function useUpdateSettings() {
       qc.setQueryData(settingsKey, saved);
       void qc.invalidateQueries({ queryKey: ["tickets"] });
     },
+  });
+}
+
+const attachmentsKey = (ticketId: string) => ["attachments", ticketId] as const;
+
+/** A ticket's attachments, oldest first. */
+export function useAttachments(ticketId: string) {
+  return useQuery({ queryKey: attachmentsKey(ticketId), queryFn: () => commands.listAttachments(ticketId) });
+}
+
+/** Files to attach: paths from the file picker or a drop, or files pasted from the clipboard. */
+export type AttachSource = { paths: string[] } | { files: File[] };
+
+/** Copies files into Jottr's storage and attaches them. Resolves with what was added. */
+export function useAddAttachments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ ticket, source }: { ticket: Ticket; source: AttachSource }): Promise<Attachment[]> =>
+      "paths" in source
+        ? commands.addAttachments(ticket.id, source.paths)
+        : Promise.all(
+            source.files.map(async (file) => commands.addAttachmentData(ticket.id, pastedName(file), await toBase64(file))),
+          ),
+    // Some files may have been added before one failed, so refetch either way.
+    onSettled: (_added, _error, { ticket }) => qc.invalidateQueries({ queryKey: attachmentsKey(ticket.id) }),
+  });
+}
+
+/** Deletes an attachment and its file; the UI asks first. */
+export function useDeleteAttachment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (attachment: Attachment) => commands.deleteAttachment(attachment.id),
+    onMutate: async (attachment) => {
+      const key = attachmentsKey(attachment.ticketId);
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<Attachment[]>(key);
+      qc.setQueryData<Attachment[]>(key, (list) => list?.filter((a) => a.id !== attachment.id));
+      return { key, previous };
+    },
+    onError: (_error, _attachment, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
   });
 }

@@ -34,6 +34,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
       ["L", "Labels"],
       ["D", "Due date"],
       ["M", "Move to board or project"],
+      ["U", "Attach files"],
       ["[  ]", "Previous / next status"],
       ["A", "Restore from the Archive"],
       ["⌘ ⇧ C", "Copy ID"],
