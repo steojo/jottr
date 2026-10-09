@@ -1,14 +1,23 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Board, Status, Ticket } from "../bindings";
 import { useUpdateTicket } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
-import { formatDue, isFinished, isOverdue, patch, statusLabel, ticketKey, type TicketGroup } from "../lib/tickets";
+import {
+  adjacentStatus,
+  formatDue,
+  isFinished,
+  isOverdue,
+  patch,
+  statusLabel,
+  ticketKey,
+  type TicketGroup,
+} from "../lib/tickets";
 import { ChecklistProgress } from "./Checklist";
 import { PlusIcon, PriorityIcon, StatusIcon } from "./icons";
 import { TicketMenu } from "./TicketMenu";
 import { TicketPickers, type PickerKind } from "./TicketPickers";
-import { Kbd } from "./ui";
+import { IconButton, Kbd } from "./ui";
 
 export function TicketList({
   groups,
@@ -68,7 +77,14 @@ export function TicketList({
     setPicker(kind);
   }
 
+  function shiftStatus(delta: 1 | -1) {
+    const status = active && adjacentStatus(active.status, delta);
+    if (active && status) update.mutate({ ticket: active, patch: patch({ status }) });
+  }
+
   useShortcuts({
+    "[": () => shiftStatus(-1),
+    "]": () => shiftStatus(1),
     j: () => step(1),
     arrowdown: () => step(1),
     k: () => step(-1),
@@ -204,23 +220,5 @@ function TicketRow({
         </span>
       )}
     </div>
-  );
-}
-
-/** A row icon that opens a picker. The negative margin keeps the row layout unchanged. */
-function IconButton({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      className="-m-[3px] rounded p-[3px] hover:bg-surface-elevated"
-    >
-      {children}
-    </button>
   );
 }

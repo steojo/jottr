@@ -36,6 +36,15 @@
   --color-status-urgent: #f2924a;
   --color-status-error: #eb5757;
 
+  /* The board's drop target is the only animated element (PRD §6.9). */
+  --animate-drop-target: drop-target 120ms ease-out;
+
+  @keyframes drop-target {
+    from {
+      opacity: 0;
+    }
+  }
+
   /* Swatches: colours that describe objects (boards, later labels) */
   --color-swatch-gray: #8b8b94;
   --color-swatch-red: #e5675f;

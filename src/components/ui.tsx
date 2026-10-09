@@ -62,3 +62,21 @@ export function Dialog({
     </RadixDialog.Root>
   );
 }
+
+/** A row or card icon that opens a picker. The negative margin keeps the row layout unchanged. */
+export function IconButton({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="-m-[3px] rounded p-[3px] hover:bg-surface-elevated"
+    >
+      {children}
+    </button>
+  );
+}

@@ -13,6 +13,16 @@ export const STATUSES: { value: Status; label: string }[] = [
 /** List groups, most active first. */
 export const LIST_ORDER: Status[] = ["in_progress", "in_review", "ready", "backlog", "done", "canceled"];
 
+/** Board columns, left to right in workflow order. */
+export const BOARD_ORDER: Status[] = ["backlog", "ready", "in_progress", "in_review", "done", "canceled"];
+
+/** The status `delta` steps along the workflow, for `[` and `]`. Canceled sits outside the flow. */
+export function adjacentStatus(status: Status, delta: 1 | -1): Status | null {
+  const flow: Status[] = ["backlog", "ready", "in_progress", "in_review", "done"];
+  const i = flow.indexOf(status);
+  return i === -1 ? null : (flow[i + delta] ?? null);
+}
+
 export const PRIORITIES: { value: Priority; label: string }[] = [
   { value: "urgent", label: "Urgent" },
   { value: "high", label: "High" },
@@ -42,6 +52,49 @@ export function groupTickets(tickets: Ticket[], grouped: boolean): TicketGroup[]
 }
 
 export const isFinished = (t: Ticket) => t.status === "done" || t.status === "canceled";
+
+/** Board columns. Done is ordered by completion, newest first, so it can be grouped by day. */
+export function boardColumns(tickets: Ticket[]): { status: Status; tickets: Ticket[] }[] {
+  const sorted = [...tickets].sort(byPosition);
+  return BOARD_ORDER.map((status) => {
+    const column = sorted.filter((t) => t.status === status);
+    if (status === "done") column.sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+    return { status, tickets: column };
+  });
+}
+
+/** A position that sorts between two neighbours (either may be missing). */
+export function positionBetween(before: Ticket | undefined, after: Ticket | undefined): number {
+  const a = before?.position ?? null;
+  const b = after?.position ?? null;
+  if (a !== null && b !== null) return (a + b) / 2;
+  if (a !== null) return a + 1;
+  if (b !== null) return b - 1;
+  return 0;
+}
+
+/** Done tickets grouped by completion day: "Today", "Yesterday", "Sun, Sep 27". */
+export function groupByCompletionDay(tickets: Ticket[]): { label: string; tickets: Ticket[] }[] {
+  const today = toDateKey(new Date());
+  const yesterday = toDateKey(addDays(-1));
+  const groups: { label: string; tickets: Ticket[] }[] = [];
+  for (const t of tickets) {
+    const day = t.completedAt ? new Date(t.completedAt) : null;
+    const key = day ? toDateKey(day) : "";
+    const label =
+      key === today
+        ? "Today"
+        : key === yesterday
+          ? "Yesterday"
+          : day
+            ? day.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
+            : "Earlier";
+    const last = groups[groups.length - 1];
+    if (last?.label === label) last.tickets.push(t);
+    else groups.push({ label, tickets: [t] });
+  }
+  return groups;
+}
 
 /** Every key is required by the bindings; `null` leaves a field unchanged. */
 export function patch(fields: Partial<TicketPatch>): TicketPatch {

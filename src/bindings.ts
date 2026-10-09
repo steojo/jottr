@@ -16,6 +16,8 @@ export const commands = {
 	 *  The ticket gets a new number on the destination board and leaves its project.
 	 */
 	moveTicket: (id: string, boardId: string | null) => __TAURI_INVOKE<Ticket>("move_ticket", { id, boardId }),
+	/**  Places a ticket at an exact status and position, e.g. after a drag and drop. */
+	repositionTicket: (id: string, status: Status, position: number | null) => __TAURI_INVOKE<Ticket>("reposition_ticket", { id, status, position }),
 	/**  `due_date` is `YYYY-MM-DD`, or `None` to clear it. */
 	setDueDate: (id: string, dueDate: string | null) => __TAURI_INVOKE<Ticket>("set_due_date", { id, dueDate }),
 	listChecklist: (ticketId: string) => __TAURI_INVOKE<ChecklistItem[]>("list_checklist", { ticketId }),

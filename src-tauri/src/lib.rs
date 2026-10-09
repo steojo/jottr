@@ -19,6 +19,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::create_ticket,
             commands::update_ticket,
             commands::move_ticket,
+            commands::reposition_ticket,
             commands::set_due_date,
             commands::list_checklist,
             commands::add_checklist_item,

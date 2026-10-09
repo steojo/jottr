@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { Status, Ticket } from "./bindings";
+import { Board } from "./components/Board";
 import { CreateBoardDialog } from "./components/CreateBoardDialog";
 import { CreateTicketDialog } from "./components/CreateTicketDialog";
 import { ChevronUpDownIcon } from "./components/icons";
@@ -10,7 +11,8 @@ import { TicketList } from "./components/TicketList";
 import { TicketPage } from "./components/TicketPage";
 import { useBoards, useMoveTicket, useTickets } from "./lib/queries";
 import { useShortcuts } from "./lib/shortcuts";
-import { SWATCH_BG, groupTickets, ticketKey } from "./lib/tickets";
+import { usePersistentState } from "./lib/storage";
+import { SWATCH_BG, boardColumns, groupTickets, ticketKey } from "./lib/tickets";
 
 function App() {
   const [view, setView] = useState<View>({ kind: "inbox" });
@@ -28,9 +30,19 @@ function App() {
   const tickets = useTickets(view.kind === "board" ? view.boardId : null).data;
   const inboxCount = useTickets(null).data?.length ?? 0;
   const move = useMoveTicket();
+  // Each board remembers list or board layout; the Inbox is always a list.
+  const [layout, setLayout] = usePersistentState<"list" | "board">(
+    `jottr.layout.${view.kind === "board" ? view.boardId : "inbox"}`,
+    "board",
+  );
+  const showBoard = view.kind === "board" && layout === "board";
 
   const groups = useMemo(() => tickets && groupTickets(tickets, view.kind === "board"), [tickets, view.kind]);
-  const order = useMemo(() => groups?.flatMap((g) => g.tickets) ?? [], [groups]);
+  // The order J/K follow on the ticket page matches what's on screen.
+  const order = useMemo(
+    () => (showBoard ? boardColumns(tickets ?? []) : (groups ?? [])).flatMap((g) => g.tickets),
+    [showBoard, tickets, groups],
+  );
 
   // While a moved ticket travels between lists it's briefly in neither; keep showing it.
   const lastOpen = useRef<Ticket | null>(null);
@@ -70,6 +82,7 @@ function App() {
     "g i": () => navigate({ kind: "inbox" }),
     "g b": () => boards.length > 0 && setSwitchingBoard(true),
     "mod+\\": () => setSidebarOpen((o) => !o),
+    "mod+b": () => view.kind === "board" && setLayout(showBoard ? "list" : "board"),
   });
 
   const position = openTicket ? order.findIndex((t) => t.id === openTicket.id) : -1;
@@ -122,12 +135,30 @@ function App() {
           ) : (
             <>
               <span className="pointer-events-none flex items-center gap-2 font-medium">{scopeLabel}</span>
+              {view.kind === "board" && (
+                <div className="ml-auto flex rounded-md border border-line p-px">
+                  {(["list", "board"] as const).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      title={`${option === "list" ? "List" : "Board"} view · ⌘B`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setLayout(option)}
+                      className={`h-6 rounded px-2.5 text-[12px] font-medium ${
+                        layout === option ? "bg-surface-hover text-fg" : "text-fg-tertiary hover:text-fg"
+                      }`}
+                    >
+                      {option === "list" ? "List" : "Board"}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button
                 type="button"
                 title="New ticket · C"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => setCreating("backlog")}
-                className="ml-auto h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-on-accent hover:bg-accent-hover"
+                className={`${view.kind === "board" ? "ml-2" : "ml-auto"} h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-on-accent hover:bg-accent-hover`}
               >
                 New ticket
               </button>
@@ -141,6 +172,18 @@ function App() {
             boards={boards}
             onClose={() => setOpenId(null)}
             onStep={step}
+            onMove={moveTicket}
+          />
+        ) : showBoard && board ? (
+          <Board
+            key={board.id}
+            boardId={board.id}
+            tickets={tickets}
+            boards={boards}
+            activeId={activeId}
+            onActiveChange={setActiveId}
+            onOpen={open}
+            onCreate={setCreating}
             onMove={moveTicket}
           />
         ) : (

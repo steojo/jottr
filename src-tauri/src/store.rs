@@ -224,6 +224,27 @@ pub fn move_ticket(conn: &mut Connection, id: String, board_id: Option<String>) 
     get_ticket(conn, &id)
 }
 
+/// Places a ticket at an exact status and position, e.g. after a drag and drop.
+/// Entering Done stamps `completed_at`; leaving it clears it.
+pub fn reposition_ticket(conn: &Connection, id: String, status: Status, position: f64) -> CmdResult<Ticket> {
+    let current: Status = conn
+        .query_row("SELECT status FROM tickets WHERE id = ?1", [&id], |row| row.get(0))
+        .optional()
+        .map_err(err)?
+        .ok_or_else(|| "Ticket not found".to_string())?;
+    let ts = now();
+    let changed = status != current;
+    conn.execute(
+        "UPDATE tickets
+         SET status = ?2, position = ?3, updated_at = ?4,
+             completed_at = CASE WHEN ?5 THEN ?6 ELSE completed_at END
+         WHERE id = ?1",
+        params![id, status, position, ts, changed, (status == Status::Done).then_some(ts)],
+    )
+    .map_err(err)?;
+    get_ticket(conn, &id)
+}
+
 fn is_valid_date(date: &str) -> bool {
     let b = date.as_bytes();
     b.len() == 10
@@ -442,5 +463,24 @@ mod tests {
         delete_checklist_item(&conn, first.id).unwrap();
         let items = list_checklist(&conn, t.id).unwrap();
         assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["Second"]);
+    }
+
+    #[test]
+    fn repositioning_sets_status_position_and_completion() {
+        let mut conn = db();
+        let t = ticket(&mut conn, None, Status::Backlog);
+
+        let moved = reposition_ticket(&conn, t.id.clone(), Status::Ready, 2.5).unwrap();
+        assert_eq!((moved.status, moved.position, moved.completed_at), (Status::Ready, 2.5, None));
+
+        let done = reposition_ticket(&conn, t.id.clone(), Status::Done, 1.0).unwrap();
+        let completed = done.completed_at.expect("entering Done stamps completion");
+        // Reordering within Done keeps the original completion time.
+        let reordered = reposition_ticket(&conn, t.id.clone(), Status::Done, 0.5).unwrap();
+        assert_eq!(reordered.completed_at, Some(completed));
+
+        let reopened = reposition_ticket(&conn, t.id.clone(), Status::InProgress, 0.0).unwrap();
+        assert_eq!(reopened.completed_at, None);
+        assert!(reposition_ticket(&conn, "missing".into(), Status::Ready, 0.0).is_err());
     }
 }

@@ -1,7 +1,9 @@
 use tauri::State;
 
 use crate::db::Db;
-use crate::models::{Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Ticket, TicketPatch};
+use crate::models::{
+    Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Status, Ticket, TicketPatch,
+};
 use crate::store::{self, err, CmdResult};
 
 #[tauri::command]
@@ -77,4 +79,11 @@ pub async fn update_checklist_item(
 #[specta::specta]
 pub async fn delete_checklist_item(db: State<'_, Db>, id: String) -> CmdResult<()> {
     store::delete_checklist_item(&*db.0.lock().map_err(err)?, id)
+}
+
+/// Places a ticket at an exact status and position, e.g. after a drag and drop.
+#[tauri::command]
+#[specta::specta]
+pub async fn reposition_ticket(db: State<'_, Db>, id: String, status: Status, position: f64) -> CmdResult<Ticket> {
+    store::reposition_ticket(&*db.0.lock().map_err(err)?, id, status, position)
 }

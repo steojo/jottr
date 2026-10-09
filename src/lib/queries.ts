@@ -6,6 +6,7 @@ import {
   type ChecklistPatch,
   type NewBoard,
   type NewTicket,
+  type Status,
   type Ticket,
   type TicketPatch,
 } from "../bindings";
@@ -82,6 +83,29 @@ export function useMoveTicket() {
     onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
     onSuccess: (saved) =>
       qc.setQueryData<Ticket[]>(ticketsKey(saved.boardId), (list) => (list ? [...list, saved] : list)),
+  });
+}
+
+/** Places a ticket at an exact status and position, e.g. after a drag and drop. */
+export function useRepositionTicket() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ticket, status, position }: { ticket: Ticket; status: Status; position: number }) =>
+      commands.repositionTicket(ticket.id, status, position),
+    onMutate: async ({ ticket, status, position }) => {
+      const key = ticketsKey(ticket.boardId);
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<Ticket[]>(key);
+      patchCachedTicket(qc, ticket.boardId, ticket.id, (t) => ({
+        ...t,
+        status,
+        position,
+        completedAt: status === t.status ? t.completedAt : status === "done" ? Date.now() : null,
+      }));
+      return { key, previous };
+    },
+    onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
+    onSuccess: (saved) => patchCachedTicket(qc, saved.boardId, saved.id, () => saved),
   });
 }
 
