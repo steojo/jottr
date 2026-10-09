@@ -1,9 +1,18 @@
 import { useMemo, useState } from "react";
 
-import type { Board, Status, Ticket } from "../bindings";
+import type { Board, Project, Status, Ticket } from "../bindings";
 import { useSetDueDate, useUpdateTicket } from "../lib/queries";
-import { PRIORITIES, STATUSES, SWATCH_BG, duePresets, formatDue, patch, ticketKey } from "../lib/tickets";
-import { PriorityIcon, StatusIcon } from "./icons";
+import {
+  PRIORITIES,
+  STATUSES,
+  duePresets,
+  formatDue,
+  moveDestinations,
+  patch,
+  ticketKey,
+  type Destination,
+} from "../lib/tickets";
+import { DestinationIcon, PriorityIcon, StatusIcon } from "./icons";
 import { Picker, type PickerOption } from "./Picker";
 
 export type PickerKind = "status" | "priority" | "due" | "move";
@@ -15,28 +24,33 @@ const PRIORITY_OPTIONS = PRIORITIES.map((p) => ({ ...p, icon: <PriorityIcon prio
 export function TicketPickers({
   ticket,
   boards,
+  projects,
   kind,
   onClose,
   onMove,
 }: {
   ticket: Ticket | undefined;
   boards: Board[];
+  projects: Project[];
   kind: PickerKind | null;
   onClose: () => void;
-  onMove: (ticket: Ticket, boardId: string | null) => void;
+  onMove: (ticket: Ticket, to: Destination) => void;
 }) {
   const update = useUpdateTicket();
   const setDue = useSetDueDate();
   const close = (open: boolean) => !open && onClose();
   const context = ticket ? (ticketKey(ticket) ?? ticket.title) : undefined;
 
-  const moveOptions = useMemo(() => {
-    const options: PickerOption<string | null>[] = boards
-      .filter((b) => b.id !== ticket?.boardId)
-      .map((b) => ({ value: b.id, label: b.name, icon: <span className={`size-2 rounded-sm ${SWATCH_BG[b.color]}`} /> }));
-    if (ticket?.boardId) options.push({ value: null, label: "Inbox" });
-    return options;
-  }, [boards, ticket?.boardId]);
+  const destinations = useMemo(
+    () => (ticket ? moveDestinations(ticket, boards, projects) : []),
+    [ticket, boards, projects],
+  );
+  const moveOptions: PickerOption<string>[] = destinations.map((d) => ({
+    value: d.key,
+    label: d.label,
+    detail: d.detail,
+    icon: <DestinationIcon option={d} />,
+  }));
 
   // Cheap to build, and rebuilding each render keeps "Today" correct across midnight.
   const dueOptions: PickerOption<string | null>[] = duePresets().map((p) => ({
@@ -91,7 +105,7 @@ export function TicketPickers({
         title="Move to"
         context={context}
         options={moveOptions}
-        onSelect={(boardId) => onMove(ticket, boardId)}
+        onSelect={(key) => onMove(ticket, destinations.find((d) => d.key === key)!.to)}
       />
     </>
   );

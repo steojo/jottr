@@ -1,11 +1,11 @@
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-import type { Board, Ticket } from "../bindings";
+import type { Board, Project, Ticket } from "../bindings";
 import { useUpdateTicket } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
-import { PRIORITIES, SWATCH_BG, formatDue, isOverdue, patch, statusLabel } from "../lib/tickets";
+import { PRIORITIES, SWATCH_BG, formatDue, isOverdue, patch, statusLabel, type Destination } from "../lib/tickets";
 import { Checklist } from "./Checklist";
-import { PriorityIcon, StatusIcon } from "./icons";
+import { PriorityIcon, ProjectIcon, StatusIcon } from "./icons";
 import { TicketPickers, type PickerKind } from "./TicketPickers";
 import { Kbd } from "./ui";
 
@@ -15,20 +15,23 @@ const DescriptionEditor = lazy(() => import("./DescriptionEditor"));
 export function TicketPage({
   ticket,
   boards,
+  projects,
   onClose,
   onStep,
   onMove,
 }: {
   ticket: Ticket;
   boards: Board[];
+  projects: Project[];
   onClose: () => void;
   /** Opens the next (1) or previous (-1) ticket in the list. */
   onStep: (delta: 1 | -1) => void;
-  onMove: (ticket: Ticket, boardId: string | null) => void;
+  onMove: (ticket: Ticket, to: Destination) => void;
 }) {
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const update = useUpdateTicket();
   const board = boards.find((b) => b.id === ticket.boardId);
+  const project = projects.find((p) => p.id === ticket.projectId);
 
   useShortcuts({
     escape: onClose,
@@ -77,9 +80,23 @@ export function TicketPage({
           {board && <span className={`size-2 rounded-sm ${SWATCH_BG[board.color]}`} />}
           {board ? board.name : "Inbox"}
         </Property>
+        {board && (
+          <Property label="Project" shortcut="M" onClick={() => setPicker("move")}>
+            {project ? (
+              <>
+                <span className="text-fg-tertiary">
+                  <ProjectIcon />
+                </span>
+                <span className="truncate">{project.name}</span>
+              </>
+            ) : (
+              <span className="text-fg-quaternary">None</span>
+            )}
+          </Property>
+        )}
       </aside>
 
-      <TicketPickers ticket={ticket} boards={boards} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />
+      <TicketPickers ticket={ticket} boards={boards} projects={projects} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />
     </div>
   );
 }

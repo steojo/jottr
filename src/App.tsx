@@ -1,18 +1,27 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 
-import type { Status, Ticket } from "./bindings";
+import type { Project, Status, Ticket } from "./bindings";
 import { Board } from "./components/Board";
 import { CreateBoardDialog } from "./components/CreateBoardDialog";
 import { CreateTicketDialog } from "./components/CreateTicketDialog";
-import { ChevronUpDownIcon } from "./components/icons";
+import { ConfirmDialog, NameDialog } from "./components/FormDialogs";
+import { ChevronUpDownIcon, ProjectIcon } from "./components/icons";
 import { Picker } from "./components/Picker";
 import { Sidebar, type View } from "./components/Sidebar";
 import { TicketList } from "./components/TicketList";
 import { TicketPage } from "./components/TicketPage";
-import { useBoards, useMoveTicket, useTickets } from "./lib/queries";
+import {
+  useBoards,
+  useCreateProject,
+  useDeleteProject,
+  useMoveTicket,
+  useProjects,
+  useRenameProject,
+  useTickets,
+} from "./lib/queries";
 import { useShortcuts } from "./lib/shortcuts";
 import { usePersistentState } from "./lib/storage";
-import { SWATCH_BG, boardColumns, groupTickets, ticketKey } from "./lib/tickets";
+import { SWATCH_BG, boardColumns, groupTickets, ticketKey, type Destination } from "./lib/tickets";
 
 function App() {
   const [view, setView] = useState<View>({ kind: "inbox" });
@@ -24,10 +33,24 @@ function App() {
   const [creating, setCreating] = useState<Status | null>(null);
   const [creatingBoard, setCreatingBoard] = useState(false);
   const [switchingBoard, setSwitchingBoard] = useState(false);
+  const [switchingProject, setSwitchingProject] = useState(false);
+  const [naming, setNaming] = useState<{ boardId: string } | { project: Project } | null>(null);
+  const [deleting, setDeleting] = useState<Project | null>(null);
+  const [expanded, setExpanded] = usePersistentState<string[]>("jottr.sidebar.expanded", []);
 
   const boards = useBoards().data ?? [];
+  const projects = useProjects().data ?? [];
   const board = view.kind === "board" ? boards.find((b) => b.id === view.boardId) : undefined;
-  const tickets = useTickets(view.kind === "board" ? view.boardId : null).data;
+  const project = view.kind === "board" ? projects.find((p) => p.id === view.projectId) : undefined;
+  const boardTickets = useTickets(view.kind === "board" ? view.boardId : null).data;
+  // A project is a filter over its board's tickets.
+  const tickets = useMemo(
+    () => (project ? boardTickets?.filter((t) => t.projectId === project.id) : boardTickets),
+    [boardTickets, project],
+  );
+  const createProject = useCreateProject();
+  const renameProject = useRenameProject();
+  const deleteProject = useDeleteProject();
   const inboxCount = useTickets(null).data?.length ?? 0;
   const move = useMoveTicket();
   // Each board remembers list or board layout; the Inbox is always a list.
@@ -65,11 +88,13 @@ function App() {
     if (next) open(next);
   }
 
-  function moveTicket(ticket: Ticket, boardId: string | null) {
-    move.mutate({ ticket, boardId });
+  function moveTicket(ticket: Ticket, to: Destination) {
+    move.mutate({ ticket, to });
+    const staysInView = to.boardId === ticket.boardId && (!project || to.projectId === project.id);
+    if (staysInView) return;
     if (ticket.id === openId) {
-      // An open ticket travels with you to its new board.
-      setView(boardId ? { kind: "board", boardId } : { kind: "inbox" });
+      // An open ticket travels with you to where it went.
+      setView(to.boardId ? { kind: "board", boardId: to.boardId, projectId: to.projectId ?? undefined } : { kind: "inbox" });
     } else if (ticket.id === activeId) {
       // In the list, the selection passes to a neighbour.
       const i = order.findIndex((t) => t.id === ticket.id);
@@ -81,6 +106,7 @@ function App() {
     c: () => setCreating("backlog"),
     "g i": () => navigate({ kind: "inbox" }),
     "g b": () => boards.length > 0 && setSwitchingBoard(true),
+    "g p": () => projects.some((p) => p.boardId === board?.id) && setSwitchingProject(true),
     "mod+\\": () => setSidebarOpen((o) => !o),
     "mod+b": () => view.kind === "board" && setLayout(showBoard ? "list" : "board"),
   });
@@ -90,6 +116,15 @@ function App() {
     <>
       {board && <span className={`size-2 rounded-sm ${SWATCH_BG[board.color]}`} />}
       {board ? board.name : "Inbox"}
+      {project && (
+        <>
+          <span className="text-fg-quaternary">/</span>
+          <span className="text-fg-tertiary">
+            <ProjectIcon />
+          </span>
+          {project.name}
+        </>
+      )}
     </>
   );
 
@@ -98,10 +133,16 @@ function App() {
       {sidebarOpen && (
         <Sidebar
           boards={boards}
+          projects={projects}
           view={view}
           inboxCount={inboxCount}
+          expanded={expanded}
+          onToggle={(id) => setExpanded((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]))}
           onNavigate={navigate}
           onNewBoard={() => setCreatingBoard(true)}
+          onNewProject={(boardId) => setNaming({ boardId })}
+          onRenameProject={(p) => setNaming({ project: p })}
+          onDeleteProject={setDeleting}
         />
       )}
 
@@ -170,6 +211,7 @@ function App() {
           <TicketPage
             ticket={openTicket}
             boards={boards}
+            projects={projects}
             onClose={() => setOpenId(null)}
             onStep={step}
             onMove={moveTicket}
@@ -180,6 +222,7 @@ function App() {
             boardId={board.id}
             tickets={tickets}
             boards={boards}
+            projects={projects}
             activeId={activeId}
             onActiveChange={setActiveId}
             onOpen={open}
@@ -188,16 +231,20 @@ function App() {
           />
         ) : (
           <TicketList
-            key={view.kind === "board" ? view.boardId : "inbox"}
+            key={view.kind === "board" ? `${view.boardId}:${view.projectId ?? ""}` : "inbox"}
             groups={groups}
             boards={boards}
+            projects={projects}
+            showProject={!project}
             activeId={activeId}
             onActiveChange={setActiveId}
             onOpen={open}
             onCreate={setCreating}
             onMove={moveTicket}
             empty={
-              board
+              project
+                ? { title: "No tickets in this project", hint: "to create one" }
+                : board
                 ? { title: "No tickets yet", hint: "to create a ticket" }
                 : { title: "Inbox is empty", hint: "to capture a ticket" }
             }
@@ -208,6 +255,7 @@ function App() {
       <CreateTicketDialog
         status={creating}
         board={board}
+        project={project}
         onClose={() => setCreating(null)}
         onCreated={(ticket) => setActiveId(ticket.id)}
       />
@@ -227,6 +275,42 @@ function App() {
         }))}
         current={view.kind === "board" ? view.boardId : undefined}
         onSelect={(boardId) => navigate({ kind: "board", boardId })}
+      />
+      <Picker
+        open={switchingProject}
+        onOpenChange={setSwitchingProject}
+        title="Go to project"
+        options={projects
+          .filter((p) => p.boardId === board?.id)
+          .map((p) => ({ value: p.id, label: p.name, icon: <ProjectIcon /> }))}
+        current={project?.id}
+        onSelect={(projectId) => board && navigate({ kind: "board", boardId: board.id, projectId })}
+      />
+      <NameDialog
+        open={naming !== null}
+        title={naming && "project" in naming ? "Rename project" : "New project"}
+        placeholder="Project name"
+        initial={naming && "project" in naming ? naming.project.name : ""}
+        onClose={() => setNaming(null)}
+        onSubmit={async (name) => {
+          if (!naming) return;
+          if ("project" in naming) return renameProject.mutateAsync({ id: naming.project.id, name });
+          const created = await createProject.mutateAsync({ boardId: naming.boardId, name });
+          setExpanded((ids) => (ids.includes(created.boardId) ? ids : [...ids, created.boardId]));
+          navigate({ kind: "board", boardId: created.boardId, projectId: created.id });
+        }}
+      />
+      <ConfirmDialog
+        open={deleting !== null}
+        title={`Delete ${deleting?.name ?? "project"}?`}
+        message="Its tickets stay on the board, just without a project."
+        confirmLabel="Delete"
+        onClose={() => setDeleting(null)}
+        onConfirm={() => {
+          if (!deleting) return;
+          deleteProject.mutate(deleting.id);
+          if (project?.id === deleting.id) navigate({ kind: "board", boardId: deleting.boardId });
+        }}
       />
     </div>
   );

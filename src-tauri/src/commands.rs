@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::db::Db;
 use crate::models::{
-    Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Status, Ticket, TicketPatch,
+    Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Project, Status, Ticket, TicketPatch,
 };
 use crate::store::{self, err, CmdResult};
 
@@ -38,12 +38,17 @@ pub async fn update_ticket(db: State<'_, Db>, id: String, patch: TicketPatch) ->
     store::update_ticket(&mut *db.0.lock().map_err(err)?, id, patch)
 }
 
-/// Moves a ticket to another board, or to the Inbox when `board_id` is `None`.
-/// The ticket gets a new number on the destination board and leaves its project.
+/// Moves a ticket to a board (or the Inbox when `board_id` is `None`) and a project on it
+/// (or none). Changing boards gives the ticket that board's next number.
 #[tauri::command]
 #[specta::specta]
-pub async fn move_ticket(db: State<'_, Db>, id: String, board_id: Option<String>) -> CmdResult<Ticket> {
-    store::move_ticket(&mut *db.0.lock().map_err(err)?, id, board_id)
+pub async fn move_ticket(
+    db: State<'_, Db>,
+    id: String,
+    board_id: Option<String>,
+    project_id: Option<String>,
+) -> CmdResult<Ticket> {
+    store::move_ticket(&mut *db.0.lock().map_err(err)?, id, board_id, project_id)
 }
 
 /// `due_date` is `YYYY-MM-DD`, or `None` to clear it.
@@ -86,4 +91,29 @@ pub async fn delete_checklist_item(db: State<'_, Db>, id: String) -> CmdResult<(
 #[specta::specta]
 pub async fn reposition_ticket(db: State<'_, Db>, id: String, status: Status, position: f64) -> CmdResult<Ticket> {
     store::reposition_ticket(&*db.0.lock().map_err(err)?, id, status, position)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_projects(db: State<'_, Db>) -> CmdResult<Vec<Project>> {
+    store::list_projects(&*db.0.lock().map_err(err)?)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn create_project(db: State<'_, Db>, board_id: String, name: String) -> CmdResult<Project> {
+    store::create_project(&*db.0.lock().map_err(err)?, board_id, name)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rename_project(db: State<'_, Db>, id: String, name: String) -> CmdResult<Project> {
+    store::rename_project(&*db.0.lock().map_err(err)?, id, name)
+}
+
+/// The project's tickets stay on the board, without a project.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_project(db: State<'_, Db>, id: String) -> CmdResult<()> {
+    store::delete_project(&*db.0.lock().map_err(err)?, id)
 }

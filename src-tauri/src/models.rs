@@ -89,6 +89,22 @@ impl Board {
 
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub id: String,
+    pub board_id: String,
+    pub name: String,
+}
+
+impl Project {
+    pub const COLUMNS: &'static str = "id, board_id, name";
+
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self { id: row.get(0)?, board_id: row.get(1)?, name: row.get(2)? })
+    }
+}
+
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
 pub struct Ticket {
     pub id: String,
     pub board_id: Option<String>,
@@ -146,6 +162,8 @@ pub struct NewBoard {
 pub struct NewTicket {
     /// `None` creates the ticket in the Inbox.
     pub board_id: Option<String>,
+    /// Must belong to `board_id`.
+    pub project_id: Option<String>,
     pub title: String,
     pub status: Status,
     pub priority: Priority,

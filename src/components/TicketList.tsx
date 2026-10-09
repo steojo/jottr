@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { Board, Status, Ticket } from "../bindings";
+import type { Board, Project, Status, Ticket } from "../bindings";
 import { useUpdateTicket } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
 import {
@@ -11,10 +11,11 @@ import {
   patch,
   statusLabel,
   ticketKey,
+  type Destination,
   type TicketGroup,
 } from "../lib/tickets";
 import { ChecklistProgress } from "./Checklist";
-import { PlusIcon, PriorityIcon, StatusIcon } from "./icons";
+import { PlusIcon, PriorityIcon, ProjectIcon, StatusIcon } from "./icons";
 import { TicketMenu } from "./TicketMenu";
 import { TicketPickers, type PickerKind } from "./TicketPickers";
 import { IconButton, Kbd } from "./ui";
@@ -22,6 +23,8 @@ import { IconButton, Kbd } from "./ui";
 export function TicketList({
   groups,
   boards,
+  projects,
+  showProject,
   activeId,
   onActiveChange,
   onOpen,
@@ -32,11 +35,14 @@ export function TicketList({
   /** `undefined` while loading. */
   groups: TicketGroup[] | undefined;
   boards: Board[];
+  projects: Project[];
+  /** Off inside a project, where every row would show the same one. */
+  showProject: boolean;
   activeId: string | null;
   onActiveChange: (id: string | null) => void;
   onOpen: (ticket: Ticket) => void;
   onCreate: (status: Status) => void;
-  onMove: (ticket: Ticket, boardId: string | null) => void;
+  onMove: (ticket: Ticket, to: Destination) => void;
   empty: { title: string; hint: string };
 }) {
   // Keyboard focus ring only shows after keyboard navigation, never after a click.
@@ -136,6 +142,7 @@ export function TicketList({
               key={ticket.id}
               ticket={ticket}
               boards={boards}
+              projects={projects}
               onOpen={() => select(ticket)}
               onStatus={(status) => update.mutate({ ticket, patch: patch({ status }) })}
               onPriority={(priority) => update.mutate({ ticket, patch: patch({ priority }) })}
@@ -143,6 +150,7 @@ export function TicketList({
             >
               <TicketRow
                 ticket={ticket}
+                project={showProject ? projects.find((p) => p.id === ticket.projectId) : undefined}
                 idWidth={idWidth}
                 active={ticket.id === activeId}
                 keyboard={keyboard}
@@ -161,13 +169,14 @@ export function TicketList({
         </section>
       ))}
 
-      <TicketPickers ticket={active} boards={boards} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />
+      <TicketPickers ticket={active} boards={boards} projects={projects} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />
     </div>
   );
 }
 
 function TicketRow({
   ticket,
+  project,
   idWidth,
   active,
   keyboard,
@@ -176,6 +185,7 @@ function TicketRow({
   onPick,
 }: {
   ticket: Ticket;
+  project: Project | undefined;
   /** In `ch`, so the mono IDs fit exactly. */
   idWidth: number;
   active: boolean;
@@ -212,6 +222,12 @@ function TicketRow({
       <span className={`flex-1 truncate ${isFinished(ticket) ? "text-fg-tertiary" : ""}`}>{ticket.title}</span>
       {/* Fixed slots, same order on every row (PRD §6.5). Empty slots take no space. */}
       {ticket.checklistTotal > 0 && <ChecklistProgress done={ticket.checklistDone} total={ticket.checklistTotal} />}
+      {project && (
+        <span className="flex max-w-40 shrink-0 items-center gap-1.5 text-[12px] text-fg-tertiary">
+          <ProjectIcon />
+          <span className="truncate">{project.name}</span>
+        </span>
+      )}
       {ticket.dueDate && (
         <span
           className={`shrink-0 font-mono text-[11px] ${isOverdue(ticket) ? "text-status-error" : "text-fg-tertiary"}`}

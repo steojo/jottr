@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { Board, Status, Ticket } from "../bindings";
+import type { Board, Project, Status, Ticket } from "../bindings";
 import { useCreateTicket } from "../lib/queries";
 import { statusLabel } from "../lib/tickets";
 import { StatusIcon } from "./icons";
@@ -9,6 +9,7 @@ import { ContextChip, Dialog, Kbd } from "./ui";
 export function CreateTicketDialog({
   status,
   board,
+  project,
   onClose,
   onCreated,
 }: {
@@ -16,6 +17,8 @@ export function CreateTicketDialog({
   status: Status | null;
   /** `undefined` creates the ticket in the Inbox. */
   board: Board | undefined;
+  /** Set when creating from inside a project. */
+  project: Project | undefined;
   onClose: () => void;
   onCreated: (ticket: Ticket) => void;
 }) {
@@ -31,7 +34,7 @@ export function CreateTicketDialog({
   function submit() {
     if (!status || !title.trim()) return;
     create.mutate(
-      { boardId: board?.id ?? null, title, status, priority: "none" },
+      { boardId: board?.id ?? null, projectId: project?.id ?? null, title, status, priority: "none" },
       {
         onSuccess: (ticket) => {
           close();
@@ -50,7 +53,7 @@ export function CreateTicketDialog({
         }}
       >
         <div className="flex h-10 items-center gap-2 border-b border-line-subtle px-3">
-          <ContextChip>{board ? board.key : "Inbox"}</ContextChip>
+          <ContextChip>{board ? (project ? `${board.key} · ${project.name}` : board.key) : "Inbox"}</ContextChip>
           {status && (
             <span className="flex items-center gap-1.5 text-fg-tertiary">
               <StatusIcon status={status} />

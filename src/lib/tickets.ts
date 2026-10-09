@@ -1,4 +1,4 @@
-import type { BoardColor, Priority, Status, Ticket, TicketPatch } from "../bindings";
+import type { Board, BoardColor, Priority, Project, Status, Ticket, TicketPatch } from "../bindings";
 
 /** Picker order; `S` then `3` = In Progress. */
 export const STATUSES: { value: Status; label: string }[] = [
@@ -177,4 +177,42 @@ export function duePresets(): { value: string; label: string }[] {
     { value: toDateKey(addDays(toMonday)), label: "Next week" },
     { value: toDateKey(addDays(14)), label: "In two weeks" },
   ];
+}
+
+/** Where a ticket can be moved: a board (or the Inbox when `boardId` is `null`) and a project on it. */
+export type Destination = { boardId: string | null; projectId: string | null };
+
+export type MoveOption = {
+  key: string;
+  to: Destination;
+  label: string;
+  /** The board, for projects on other boards. */
+  detail?: string;
+  kind: "project" | "board" | "inbox" | "no-project";
+  board?: Board;
+};
+
+/**
+ * Everywhere a ticket can go, nearest first: other projects on its board, then other
+ * boards (each followed by its projects), then the Inbox.
+ */
+export function moveDestinations(ticket: Ticket, boards: Board[], projects: Project[]): MoveOption[] {
+  const options: MoveOption[] = [];
+  const current = boards.find((b) => b.id === ticket.boardId);
+  if (current) {
+    for (const p of projects.filter((p) => p.boardId === current.id && p.id !== ticket.projectId)) {
+      options.push({ key: `p:${p.id}`, to: { boardId: current.id, projectId: p.id }, label: p.name, kind: "project", board: current });
+    }
+    if (ticket.projectId) {
+      options.push({ key: "no-project", to: { boardId: current.id, projectId: null }, label: "No project", kind: "no-project" });
+    }
+  }
+  for (const b of boards.filter((b) => b.id !== ticket.boardId)) {
+    options.push({ key: `b:${b.id}`, to: { boardId: b.id, projectId: null }, label: b.name, kind: "board", board: b });
+    for (const p of projects.filter((p) => p.boardId === b.id)) {
+      options.push({ key: `p:${p.id}`, to: { boardId: b.id, projectId: p.id }, label: p.name, detail: b.name, kind: "project", board: b });
+    }
+  }
+  if (ticket.boardId) options.push({ key: "inbox", to: { boardId: null, projectId: null }, label: "Inbox", kind: "inbox" });
+  return options;
 }

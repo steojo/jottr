@@ -6,16 +6,21 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 export const commands = {
 	listBoards: () => __TAURI_INVOKE<Board[]>("list_boards"),
 	createBoard: (input: NewBoard) => __TAURI_INVOKE<Board>("create_board", { input }),
+	listProjects: () => __TAURI_INVOKE<Project[]>("list_projects"),
+	createProject: (boardId: string, name: string) => __TAURI_INVOKE<Project>("create_project", { boardId, name }),
+	renameProject: (id: string, name: string) => __TAURI_INVOKE<Project>("rename_project", { id, name }),
+	/**  The project's tickets stay on the board, without a project. */
+	deleteProject: (id: string) => __TAURI_INVOKE<null>("delete_project", { id }),
 	/**  Tickets on a board, or in the Inbox when `board_id` is `None`. */
 	listTickets: (boardId: string | null) => __TAURI_INVOKE<Ticket[]>("list_tickets", { boardId }),
 	/**  New tickets go to the top of their status group. */
 	createTicket: (input: NewTicket) => __TAURI_INVOKE<Ticket>("create_ticket", { input }),
 	updateTicket: (id: string, patch: TicketPatch) => __TAURI_INVOKE<Ticket>("update_ticket", { id, patch }),
 	/**
-	 *  Moves a ticket to another board, or to the Inbox when `board_id` is `None`.
-	 *  The ticket gets a new number on the destination board and leaves its project.
+	 *  Moves a ticket to a board (or the Inbox when `board_id` is `None`) and a project on it
+	 *  (or none). Changing boards gives the ticket that board's next number.
 	 */
-	moveTicket: (id: string, boardId: string | null) => __TAURI_INVOKE<Ticket>("move_ticket", { id, boardId }),
+	moveTicket: (id: string, boardId: string | null, projectId: string | null) => __TAURI_INVOKE<Ticket>("move_ticket", { id, boardId, projectId }),
 	/**  Places a ticket at an exact status and position, e.g. after a drag and drop. */
 	repositionTicket: (id: string, status: Status, position: number | null) => __TAURI_INVOKE<Ticket>("reposition_ticket", { id, status, position }),
 	/**  `due_date` is `YYYY-MM-DD`, or `None` to clear it. */
@@ -59,12 +64,20 @@ export type NewBoard = {
 export type NewTicket = {
 	/**  `None` creates the ticket in the Inbox. */
 	boardId: string | null,
+	/**  Must belong to `board_id`. */
+	projectId: string | null,
 	title: string,
 	status: Status,
 	priority: Priority,
 };
 
 export type Priority = "none" | "low" | "medium" | "high" | "urgent";
+
+export type Project = {
+	id: string,
+	boardId: string,
+	name: string,
+};
 
 export type Status = "backlog" | "ready" | "in_progress" | "in_review" | "done" | "canceled";
 

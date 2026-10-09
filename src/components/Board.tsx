@@ -14,7 +14,7 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import type { Board as BoardModel, Status, Ticket } from "../bindings";
+import type { Board as BoardModel, Project, Status, Ticket } from "../bindings";
 import { useRepositionTicket, useUpdateTicket } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
 import { usePersistentState } from "../lib/storage";
@@ -29,6 +29,7 @@ import {
   positionBetween,
   statusLabel,
   ticketKey,
+  type Destination,
 } from "../lib/tickets";
 import { ChecklistProgress } from "./Checklist";
 import { ChevronRightIcon, PlusIcon, PriorityIcon, StatusIcon } from "./icons";
@@ -43,6 +44,7 @@ export function Board({
   boardId,
   tickets,
   boards,
+  projects,
   activeId,
   onActiveChange,
   onOpen,
@@ -52,11 +54,12 @@ export function Board({
   boardId: string;
   tickets: Ticket[] | undefined;
   boards: BoardModel[];
+  projects: Project[];
   activeId: string | null;
   onActiveChange: (id: string | null) => void;
   onOpen: (ticket: Ticket) => void;
   onCreate: (status: Status) => void;
-  onMove: (ticket: Ticket, boardId: string | null) => void;
+  onMove: (ticket: Ticket, to: Destination) => void;
 }) {
   const [collapsed, setCollapsed] = usePersistentState<Status[]>(`jottr.collapsed.${boardId}`, ["canceled"]);
   // Keyboard focus ring only shows after keyboard navigation, never after a click.
@@ -218,6 +221,7 @@ export function Board({
                   key={ticket.id}
                   ticket={ticket}
                   boards={boards}
+                  projects={projects}
                   onOpen={() => select(ticket)}
                   onStatus={(s) => update.mutate({ ticket, patch: patch({ status: s }) })}
                   onPriority={(priority) => update.mutate({ ticket, patch: patch({ priority }) })}
@@ -252,7 +256,7 @@ export function Board({
         {dragged && <Card ticket={dragged} active={false} keyboard={false} lifted />}
       </DragOverlay>
 
-      <TicketPickers ticket={active} boards={boards} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />
+      <TicketPickers ticket={active} boards={boards} projects={projects} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />
     </DndContext>
   );
 }

@@ -15,6 +15,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
         .commands(collect_commands![
             commands::list_boards,
             commands::create_board,
+            commands::list_projects,
+            commands::create_project,
+            commands::rename_project,
+            commands::delete_project,
             commands::list_tickets,
             commands::create_ticket,
             commands::update_ticket,

@@ -1,4 +1,5 @@
 import type { Priority, Status } from "../bindings";
+import { SWATCH_BG, type MoveOption } from "../lib/tickets";
 
 /** Shape carries the meaning; colour only reinforces it (PRD §6.3). */
 export function StatusIcon({ status }: { status: Status }) {
@@ -137,5 +138,34 @@ export function ChevronUpDownIcon({ direction }: { direction: "up" | "down" }) {
         strokeLinecap="round"
       />
     </svg>
+  );
+}
+
+/** Projects: a small grid of four squares. */
+export function ProjectIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" className="shrink-0">
+      {[
+        [1.5, 1.5],
+        [6.5, 1.5],
+        [1.5, 6.5],
+        [6.5, 6.5],
+      ].map(([x, y]) => (
+        <rect key={`${x}${y}`} x={x} y={y} width="4" height="4" rx="1" fill="currentColor" />
+      ))}
+    </svg>
+  );
+}
+
+/** Icon for a move destination: a board's colour dot, or the project grid. */
+export function DestinationIcon({ option }: { option: MoveOption }) {
+  // A fixed box keeps labels aligned whichever icon (or none) a row has.
+  return (
+    <span className="flex size-3 shrink-0 items-center justify-center text-fg-tertiary">
+      {option.kind === "board" && option.board && (
+        <span className={`size-2 rounded-sm ${SWATCH_BG[option.board.color]}`} />
+      )}
+      {option.kind === "project" && <ProjectIcon />}
+    </span>
   );
 }

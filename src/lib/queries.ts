@@ -10,7 +10,7 @@ import {
   type Ticket,
   type TicketPatch,
 } from "../bindings";
-import { applyPatch } from "./tickets";
+import { applyPatch, type Destination } from "./tickets";
 
 // Everything is local, so data is only stale when we change it ourselves.
 export const queryClient = new QueryClient({
@@ -67,22 +67,62 @@ export function useUpdateTicket() {
   });
 }
 
-/** Moves a ticket to another board, or to the Inbox when `boardId` is `null`. */
+/** Moves a ticket to a board and project. Within the same board, only its project changes. */
 export function useMoveTicket() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ ticket, boardId }: { ticket: Ticket; boardId: string | null }) =>
-      commands.moveTicket(ticket.id, boardId),
-    onMutate: async ({ ticket }) => {
+    mutationFn: ({ ticket, to }: { ticket: Ticket; to: Destination }) =>
+      commands.moveTicket(ticket.id, to.boardId, to.projectId),
+    onMutate: async ({ ticket, to }) => {
       const key = ticketsKey(ticket.boardId);
       await qc.cancelQueries({ queryKey: key });
       const previous = qc.getQueryData<Ticket[]>(key);
-      qc.setQueryData<Ticket[]>(key, (list) => list?.filter((t) => t.id !== ticket.id));
+      qc.setQueryData<Ticket[]>(key, (list) =>
+        to.boardId === ticket.boardId
+          ? list?.map((t) => (t.id === ticket.id ? { ...t, projectId: to.projectId } : t))
+          : list?.filter((t) => t.id !== ticket.id),
+      );
       return { key, previous };
     },
     onError: (_error, _vars, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),
-    onSuccess: (saved) =>
-      qc.setQueryData<Ticket[]>(ticketsKey(saved.boardId), (list) => (list ? [...list, saved] : list)),
+    onSuccess: (saved, { ticket }) =>
+      saved.boardId === ticket.boardId
+        ? patchCachedTicket(qc, saved.boardId, saved.id, () => saved)
+        : qc.setQueryData<Ticket[]>(ticketsKey(saved.boardId), (list) => (list ? [...list, saved] : list)),
+  });
+}
+
+const projectsKey = ["projects"] as const;
+
+export function useProjects() {
+  return useQuery({ queryKey: projectsKey, queryFn: commands.listProjects });
+}
+
+export function useCreateProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ boardId, name }: { boardId: string; name: string }) => commands.createProject(boardId, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: projectsKey }),
+  });
+}
+
+export function useRenameProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => commands.renameProject(id, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: projectsKey }),
+  });
+}
+
+/** Its tickets stay on the board without a project, so ticket lists are refetched too. */
+export function useDeleteProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => commands.deleteProject(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: projectsKey });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+    },
   });
 }
 

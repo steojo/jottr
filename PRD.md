@@ -97,6 +97,7 @@ Board  (e.g. Engineering, Marketing, Life)
 ### 3.2 Projects
 - A grouping of related tickets within a board.
 - A board can have many projects.
+- A ticket belongs to at most one project, on its own board. Moving a ticket to another board removes it from its project unless a project on the new board is chosen.
 
 ### 3.3 Tickets
 - The unit of work. Tickets move through statuses on the board.
@@ -345,6 +346,7 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 - **Top:** Inbox (with a count of untriaged tickets) and My Focus.
 - **Boards:** each board is shown with its colour dot. Expand a board to see its projects. Expanded state is remembered.
 - Clicking a board shows all its tickets; clicking a project shows only that project's tickets.
+- Hover a board for **+** to add a project. Right-click a project to rename or delete it. Deleting keeps its tickets on the board, without a project.
 - Toggle with `⌘\`.
 
 ### 6.8 Ticket page

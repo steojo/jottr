@@ -4,7 +4,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::db::{new_id, now};
 use crate::models::{
-    Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Status, Ticket, TicketPatch,
+    Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Project, Status, Ticket, TicketPatch,
 };
 
 pub type CmdResult<T> = Result<T, String>;
@@ -56,6 +56,20 @@ fn next_number(conn: &Connection, board_id: &str) -> CmdResult<i32> {
     .optional()
     .map_err(err)?
     .ok_or_else(|| "Board not found".to_string())
+}
+
+/// Errors unless `project_id` is `None` or a project on `board_id`.
+fn check_project(conn: &Connection, board_id: Option<&str>, project_id: Option<&str>) -> CmdResult<()> {
+    let Some(project_id) = project_id else { return Ok(()) };
+    let project_board: Option<String> = conn
+        .query_row("SELECT board_id FROM projects WHERE id = ?1", [project_id], |row| row.get(0))
+        .optional()
+        .map_err(err)?;
+    match project_board {
+        None => Err("Project not found".into()),
+        Some(b) if Some(b.as_str()) != board_id => Err("That project belongs to another board".into()),
+        Some(_) => Ok(()),
+    }
 }
 
 fn is_valid_key(key: &str) -> bool {
@@ -125,16 +139,28 @@ pub fn create_ticket(conn: &mut Connection, input: NewTicket) -> CmdResult<Ticke
 
     let tx = conn.transaction().map_err(err)?;
     let board_id = input.board_id.as_deref();
+    check_project(&tx, board_id, input.project_id.as_deref())?;
     let number = board_id.map(|id| next_number(&tx, id)).transpose()?;
     let position = top_position(&tx, board_id, input.status)?;
     let ts = now();
     let completed_at = (input.status == Status::Done).then_some(ts);
     let id = new_id();
     tx.execute(
-        "INSERT INTO tickets (id, board_id, number, title, status, priority, position,
+        "INSERT INTO tickets (id, board_id, project_id, number, title, status, priority, position,
                               created_at, updated_at, completed_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)",
-        params![id, board_id, number, title, input.status, input.priority, position, ts, completed_at],
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)",
+        params![
+            id,
+            board_id,
+            input.project_id,
+            number,
+            title,
+            input.status,
+            input.priority,
+            position,
+            ts,
+            completed_at
+        ],
     )
     .map_err(err)?;
     tx.commit().map_err(err)?;
@@ -196,10 +222,16 @@ pub fn update_ticket(conn: &mut Connection, id: String, patch: TicketPatch) -> C
     get_ticket(conn, &id)
 }
 
-/// Moves a ticket to another board, or to the Inbox when `board_id` is `None`.
-/// The ticket gets a new number on the destination board and leaves its project.
-pub fn move_ticket(conn: &mut Connection, id: String, board_id: Option<String>) -> CmdResult<Ticket> {
+/// Moves a ticket to a board (or the Inbox when `board_id` is `None`) and a project on it
+/// (or none). Changing boards gives the ticket that board's next number.
+pub fn move_ticket(
+    conn: &mut Connection,
+    id: String,
+    board_id: Option<String>,
+    project_id: Option<String>,
+) -> CmdResult<Ticket> {
     let tx = conn.transaction().map_err(err)?;
+    check_project(&tx, board_id.as_deref(), project_id.as_deref())?;
     let (current_board, status): (Option<String>, Status) = tx
         .query_row("SELECT board_id, status FROM tickets WHERE id = ?1", [&id], |row| {
             Ok((row.get(0)?, row.get(1)?))
@@ -212,13 +244,16 @@ pub fn move_ticket(conn: &mut Connection, id: String, board_id: Option<String>) 
         let number = board_id.as_deref().map(|b| next_number(&tx, b)).transpose()?;
         let position = top_position(&tx, board_id.as_deref(), status)?;
         tx.execute(
-            "UPDATE tickets SET board_id = ?2, number = ?3, project_id = NULL, position = ?4,
-                                updated_at = ?5
-             WHERE id = ?1",
-            params![id, board_id, number, position, now()],
+            "UPDATE tickets SET board_id = ?2, number = ?3, position = ?4 WHERE id = ?1",
+            params![id, board_id, number, position],
         )
         .map_err(err)?;
     }
+    tx.execute(
+        "UPDATE tickets SET project_id = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, project_id, now()],
+    )
+    .map_err(err)?;
 
     tx.commit().map_err(err)?;
     get_ticket(conn, &id)
@@ -243,6 +278,73 @@ pub fn reposition_ticket(conn: &Connection, id: String, status: Status, position
     )
     .map_err(err)?;
     get_ticket(conn, &id)
+}
+
+pub fn list_projects(conn: &Connection) -> CmdResult<Vec<Project>> {
+    let mut stmt = conn
+        .prepare(&format!("SELECT {} FROM projects ORDER BY board_id, position", Project::COLUMNS))
+        .map_err(err)?;
+    let projects = stmt.query_map([], Project::from_row).map_err(err)?;
+    projects.collect::<Result<_, _>>().map_err(err)
+}
+
+fn get_project(conn: &Connection, id: &str) -> CmdResult<Project> {
+    conn.query_row(
+        &format!("SELECT {} FROM projects WHERE id = ?1", Project::COLUMNS),
+        [id],
+        Project::from_row,
+    )
+    .map_err(err)
+}
+
+fn project_name(name: &str) -> CmdResult<&str> {
+    let name = name.trim();
+    if name.is_empty() {
+        Err("Project name can't be empty".into())
+    } else {
+        Ok(name)
+    }
+}
+
+/// New projects go to the end of their board's list.
+pub fn create_project(conn: &Connection, board_id: String, name: String) -> CmdResult<Project> {
+    let name = project_name(&name)?;
+    let position: f64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM projects WHERE board_id = ?1",
+            [&board_id],
+            |row| row.get(0),
+        )
+        .map_err(err)?;
+    let id = new_id();
+    conn.execute(
+        "INSERT INTO projects (id, board_id, name, position, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+        params![id, board_id, name, position, now()],
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::ConstraintViolation => {
+            "Board not found".to_string()
+        }
+        e => err(e),
+    })?;
+    get_project(conn, &id)
+}
+
+pub fn rename_project(conn: &Connection, id: String, name: String) -> CmdResult<Project> {
+    let name = project_name(&name)?;
+    conn.execute(
+        "UPDATE projects SET name = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, name, now()],
+    )
+    .map_err(err)?;
+    get_project(conn, &id)
+}
+
+/// The project's tickets stay on the board, without a project.
+pub fn delete_project(conn: &Connection, id: String) -> CmdResult<()> {
+    conn.execute("DELETE FROM projects WHERE id = ?1", [id]).map_err(err)?;
+    Ok(())
 }
 
 fn is_valid_date(date: &str) -> bool {
@@ -350,6 +452,7 @@ mod tests {
     fn ticket(conn: &mut Connection, board_id: Option<&str>, status: Status) -> Ticket {
         let input = NewTicket {
             board_id: board_id.map(String::from),
+            project_id: None,
             title: "Ticket".into(),
             status,
             priority: Priority::None,
@@ -415,11 +518,11 @@ mod tests {
         ticket(&mut conn, Some(&eng.id), Status::Backlog);
         let t = ticket(&mut conn, None, Status::Backlog);
 
-        let moved = move_ticket(&mut conn, t.id.clone(), Some(eng.id.clone())).unwrap();
+        let moved = move_ticket(&mut conn, t.id.clone(), Some(eng.id.clone()), None).unwrap();
         assert_eq!((moved.number, moved.board_key.as_deref()), (Some(2), Some("ENG")));
         assert!(list_tickets(&conn, None).unwrap().is_empty());
 
-        let back = move_ticket(&mut conn, t.id.clone(), None).unwrap();
+        let back = move_ticket(&mut conn, t.id.clone(), None, None).unwrap();
         assert_eq!((back.number, back.board_key), (None, None));
         assert_eq!(list_tickets(&conn, None).unwrap().len(), 1);
     }
@@ -427,7 +530,13 @@ mod tests {
     #[test]
     fn rejects_empty_titles() {
         let mut conn = db();
-        let input = NewTicket { board_id: None, title: "   ".into(), status: Status::Backlog, priority: Priority::None };
+        let input = NewTicket {
+            board_id: None,
+            project_id: None,
+            title: "   ".into(),
+            status: Status::Backlog,
+            priority: Priority::None,
+        };
         assert!(create_ticket(&mut conn, input).is_err());
     }
 
@@ -482,5 +591,51 @@ mod tests {
         let reopened = reposition_ticket(&conn, t.id.clone(), Status::InProgress, 0.0).unwrap();
         assert_eq!(reopened.completed_at, None);
         assert!(reposition_ticket(&conn, "missing".into(), Status::Ready, 0.0).is_err());
+    }
+
+    #[test]
+    fn projects_are_created_renamed_and_deleted() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let auth = create_project(&conn, eng.id.clone(), " Auth rewrite ".into()).unwrap();
+        let launch = create_project(&conn, eng.id.clone(), "Launch".into()).unwrap();
+        assert_eq!(auth.name, "Auth rewrite");
+        assert!(create_project(&conn, eng.id.clone(), "  ".into()).is_err());
+        assert!(create_project(&conn, "missing".into(), "Orphan".into()).is_err());
+        let names: Vec<_> = list_projects(&conn).unwrap().into_iter().map(|p| p.name).collect();
+        assert_eq!(names, ["Auth rewrite", "Launch"]);
+
+        assert_eq!(rename_project(&conn, launch.id.clone(), "Q4 launch".into()).unwrap().name, "Q4 launch");
+
+        // Deleting a project keeps its tickets on the board.
+        let input = NewTicket {
+            board_id: Some(eng.id.clone()),
+            project_id: Some(auth.id.clone()),
+            title: "Login".into(),
+            status: Status::Backlog,
+            priority: Priority::None,
+        };
+        let t = create_ticket(&mut conn, input).unwrap();
+        assert_eq!(t.project_id.as_deref(), Some(auth.id.as_str()));
+        delete_project(&conn, auth.id).unwrap();
+        let kept = &list_tickets(&conn, Some(eng.id)).unwrap()[0];
+        assert_eq!((kept.id.as_str(), kept.project_id.as_deref()), (t.id.as_str(), None));
+    }
+
+    #[test]
+    fn moving_sets_the_project_and_checks_its_board() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let ops = board(&conn, "OPS");
+        let auth = create_project(&conn, eng.id.clone(), "Auth".into()).unwrap();
+        let t = ticket(&mut conn, Some(&eng.id), Status::Backlog);
+
+        // Same board: only the project changes, so the number stays.
+        let in_project = move_ticket(&mut conn, t.id.clone(), Some(eng.id.clone()), Some(auth.id.clone())).unwrap();
+        assert_eq!((in_project.number, in_project.project_id.as_deref()), (Some(1), Some(auth.id.as_str())));
+
+        assert!(move_ticket(&mut conn, t.id.clone(), Some(ops.id.clone()), Some(auth.id.clone())).is_err());
+        let moved = move_ticket(&mut conn, t.id.clone(), Some(ops.id.clone()), None).unwrap();
+        assert_eq!((moved.board_key.as_deref(), moved.project_id), (Some("OPS"), None));
     }
 }

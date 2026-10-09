@@ -1,9 +1,9 @@
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import type { ReactNode } from "react";
 
-import type { Board, Priority, Status, Ticket } from "../bindings";
-import { PRIORITIES, STATUSES, SWATCH_BG } from "../lib/tickets";
-import { CheckIcon, ChevronRightIcon, PriorityIcon, StatusIcon } from "./icons";
+import type { Board, Priority, Project, Status, Ticket } from "../bindings";
+import { PRIORITIES, STATUSES, moveDestinations, type Destination } from "../lib/tickets";
+import { CheckIcon, ChevronRightIcon, DestinationIcon, PriorityIcon, StatusIcon } from "./icons";
 import { Kbd } from "./ui";
 
 const panel = "z-50 min-w-48 rounded-lg border border-line bg-surface-elevated p-1 shadow-2xl shadow-black/50";
@@ -12,8 +12,6 @@ const item =
   "data-[disabled]:text-fg-quaternary data-[highlighted]:bg-surface-hover data-[highlighted]:text-fg " +
   "data-[state=open]:bg-surface-hover data-[state=open]:text-fg";
 
-const boardDot = (b: Board) => <span className={`size-2 shrink-0 rounded-sm ${SWATCH_BG[b.color]}`} />;
-
 /**
  * Right-click menu for a ticket (PRD §6.4). Mirrors the S / P / M pickers,
  * with each option's icon and a tick on the current value.
@@ -21,6 +19,7 @@ const boardDot = (b: Board) => <span className={`size-2 shrink-0 rounded-sm ${SW
 export function TicketMenu({
   ticket,
   boards,
+  projects,
   onOpen,
   onStatus,
   onPriority,
@@ -29,14 +28,14 @@ export function TicketMenu({
 }: {
   ticket: Ticket;
   boards: Board[];
+  projects: Project[];
   onOpen: () => void;
   onStatus: (status: Status) => void;
   onPriority: (priority: Priority) => void;
-  onMove: (boardId: string | null) => void;
+  onMove: (to: Destination) => void;
   children: ReactNode;
 }) {
-  const destinations = boards.filter((b) => b.id !== ticket.boardId);
-  const canMove = destinations.length > 0 || ticket.boardId !== null;
+  const destinations = moveDestinations(ticket, boards, projects);
 
   return (
     <ContextMenu.Root onOpenChange={(open) => open && onOpen()}>
@@ -68,13 +67,15 @@ export function TicketMenu({
               />
             ))}
           </Submenu>
-          <Submenu icon={<span className="size-3.5" />} label="Move to" shortcut="M" disabled={!canMove}>
-            {destinations.map((b) => (
-              <Option key={b.id} icon={boardDot(b)} label={b.name} onSelect={() => onMove(b.id)} />
+          <Submenu icon={<span className="size-3.5" />} label="Move to" shortcut="M" disabled={destinations.length === 0}>
+            {destinations.map((d) => (
+              <Option
+                key={d.key}
+                icon={<DestinationIcon option={d} />}
+                label={d.detail ? `${d.label} · ${d.detail}` : d.label}
+                onSelect={() => onMove(d.to)}
+              />
             ))}
-            {ticket.boardId !== null && (
-              <Option icon={<span className="size-2" />} label="Inbox" onSelect={() => onMove(null)} />
-            )}
           </Submenu>
         </ContextMenu.Content>
       </ContextMenu.Portal>
