@@ -343,7 +343,7 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 - Elevated surface, subtle border, rounded corners.
 - **Title:** up to 2 lines, then truncated.
 - **Meta row** below the title: priority, ID, labels, checklist progress, with the due date right-aligned. Empty slots take no space.
-- The project isn't shown on cards, to keep them easy to scan. Filter the board by project instead.
+- **Project:** shown in small text above the title. Hidden inside a project view, where every card would show the same one.
 - Card states match the list row states (§6.5): hover, selected, keyboard focus, multi-selected.
 - Done and Canceled cards have dimmed titles.
 

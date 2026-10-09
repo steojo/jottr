@@ -32,7 +32,7 @@ import {
   type Destination,
 } from "../lib/tickets";
 import { ChecklistProgress } from "./Checklist";
-import { ChevronRightIcon, PlusIcon, PriorityIcon, StatusIcon } from "./icons";
+import { ChevronRightIcon, PlusIcon, PriorityIcon, ProjectIcon, StatusIcon } from "./icons";
 import { LabelChips } from "./Labels";
 import { TicketMenu } from "./TicketMenu";
 import { TicketPickers, type PickerKind } from "./TicketPickers";
@@ -46,6 +46,7 @@ export function Board({
   tickets,
   boards,
   projects,
+  showProject,
   activeId,
   onActiveChange,
   onOpen,
@@ -56,6 +57,8 @@ export function Board({
   tickets: Ticket[] | undefined;
   boards: BoardModel[];
   projects: Project[];
+  /** Off inside a project, where every card would show the same one. */
+  showProject: boolean;
   activeId: string | null;
   onActiveChange: (id: string | null) => void;
   onOpen: (ticket: Ticket) => void;
@@ -232,6 +235,7 @@ export function Board({
                 >
                   <SortableCard
                     ticket={ticket}
+                    project={showProject ? projects.find((p) => p.id === ticket.projectId) : undefined}
                     labels={labels}
                     active={ticket.id === activeId}
                     keyboard={keyboard}
@@ -257,7 +261,16 @@ export function Board({
 
       {/* No drop animation: the card lands instantly; only the drop target fades in. */}
       <DragOverlay dropAnimation={null}>
-        {dragged && <Card ticket={dragged} labels={labels} active={false} keyboard={false} lifted />}
+        {dragged && (
+          <Card
+            ticket={dragged}
+            project={showProject ? projects.find((p) => p.id === dragged.projectId) : undefined}
+            labels={labels}
+            active={false}
+            keyboard={false}
+            lifted
+          />
+        )}
       </DragOverlay>
 
       <TicketPickers ticket={active} boards={boards} projects={projects} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />
@@ -346,6 +359,7 @@ function CollapsedColumn({ status, count, onExpand }: { status: Status; count: n
 
 function SortableCard({
   ticket,
+  project,
   labels,
   active,
   keyboard,
@@ -354,6 +368,7 @@ function SortableCard({
   onPick,
 }: {
   ticket: Ticket;
+  project: Project | undefined;
   labels: Label[];
   active: boolean;
   keyboard: boolean;
@@ -378,19 +393,28 @@ function SortableCard({
         // The drop target: where the card will land.
         <div className="animate-drop-target rounded-lg border border-dashed border-line-strong motion-reduce:animate-none">
           <div className="invisible">
-            <Card ticket={ticket} labels={labels} active={false} keyboard={false} />
+            <Card ticket={ticket} project={project} labels={labels} active={false} keyboard={false} />
           </div>
         </div>
       ) : (
-        <Card ticket={ticket} labels={labels} active={active} keyboard={keyboard} onClick={onClick} onPick={onPick} />
+        <Card
+          ticket={ticket}
+          project={project}
+          labels={labels}
+          active={active}
+          keyboard={keyboard}
+          onClick={onClick}
+          onPick={onPick}
+        />
       )}
     </div>
   );
 }
 
-/** Title up to two lines, then a meta row (PRD §6.6). The project isn't shown, to keep cards scannable. */
+/** Project (if any), title up to two lines, then a meta row (PRD §6.6). */
 function Card({
   ticket,
+  project,
   labels,
   active,
   keyboard,
@@ -399,6 +423,7 @@ function Card({
   onPick,
 }: {
   ticket: Ticket;
+  project: Project | undefined;
   labels: Label[];
   active: boolean;
   keyboard: boolean;
@@ -422,6 +447,12 @@ function Card({
       {active && <span className="absolute inset-y-0 left-0 w-0.5 bg-accent" />}
       {active && keyboard && (
         <span className="pointer-events-none absolute inset-0 rounded-lg shadow-[inset_0_0_0_1.5px_var(--color-accent)]" />
+      )}
+      {project && (
+        <div className="mb-1 flex items-center gap-1.5 text-[11px] text-fg-tertiary">
+          <ProjectIcon />
+          <span className="truncate">{project.name}</span>
+        </div>
       )}
       <p className={`line-clamp-2 leading-snug ${isFinished(ticket) ? "text-fg-tertiary" : ""}`}>{ticket.title}</p>
       <div className="mt-2 flex items-center gap-2">

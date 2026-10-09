@@ -223,6 +223,7 @@ function App() {
             tickets={tickets}
             boards={boards}
             projects={projects}
+            showProject={!project}
             activeId={activeId}
             onActiveChange={setActiveId}
             onOpen={open}
