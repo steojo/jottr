@@ -42,6 +42,8 @@ Rust owns all data; the UI never touches the database directly.
   - New tickets and status changes go to the top of their status group (`MIN(position) - 1`).
   - Setting `done` stamps `completed_at`.
 - **UI data (`src/lib/queries.ts`):** TanStack Query, with `staleTime: Infinity` since all data is local. Mutations update the cache optimistically and roll back on error. `applyPatch` in `src/lib/tickets.ts` mirrors `update_ticket` and must stay in sync with it.
+- **Views:** `App.tsx` owns the current scope (Inbox or a board), the selected ticket (`activeId`) and the open ticket (`openId`). With a ticket open, `TicketPage` replaces `TicketList`, and both share `TicketPickers` for the S/P/D/M pickers. `groupTickets` in `src/lib/tickets.ts` defines the list order that J/K follow.
+- **Ticket page:** the description editor (`DescriptionEditor.tsx`, TipTap + `@tiptap/markdown`) is lazy-loaded, since it's the heaviest dependency. Descriptions are stored as markdown. The page content is keyed by ticket ID so J/K remounts the editors, which flushes pending saves.
 - **Keyboard (`src/lib/shortcuts.ts`):** one global `keydown` listener with a registry of `useShortcuts` maps. The most recently mounted map wins, so views override global keys. It handles the `g x` prefix sequences.
   - Shortcuts are ignored while typing or while any `[role=dialog]` or `[role=menu]` is open. Dialogs and menus handle their own keys; see `Picker.tsx` for the numbered-option pattern.
   - Buttons call `preventDefault` on `mousedown`, and dialogs skip focus return, so focus stays on the body and Enter/Space can't re-trigger a button.

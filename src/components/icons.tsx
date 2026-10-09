@@ -125,3 +125,17 @@ export function ChevronRightIcon() {
     </svg>
   );
 }
+
+export function ChevronUpDownIcon({ direction }: { direction: "up" | "down" }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" className="shrink-0">
+      <path
+        d={direction === "up" ? "M2.5 7.5L6 4l3.5 3.5" : "M2.5 4.5L6 8l3.5-3.5"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

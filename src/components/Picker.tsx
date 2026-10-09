@@ -2,7 +2,8 @@ import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { ContextChip, Dialog, Kbd } from "./ui";
 
-export type PickerOption<T> = { value: T; label: string; icon?: ReactNode };
+/** `detail` is shown dimmed on the right, e.g. the date a preset resolves to. */
+export type PickerOption<T> = { value: T; label: string; icon?: ReactNode; detail?: string };
 
 /**
  * Keyboard-first option list: `1`–`9` picks directly, arrows or `J`/`K` move,
@@ -16,6 +17,7 @@ export function Picker<T>({
   options,
   current,
   onSelect,
+  footer,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -24,6 +26,8 @@ export function Picker<T>({
   options: PickerOption<T>[];
   current?: T;
   onSelect: (value: T) => void;
+  /** Extra controls below the options, e.g. a date input. */
+  footer?: ReactNode;
 }) {
   const [index, setIndex] = useState(0);
 
@@ -40,6 +44,8 @@ export function Picker<T>({
   }
 
   function onKeyDown(e: KeyboardEvent) {
+    // Keys typed into footer inputs belong to the input.
+    if ((e.target as HTMLElement).tagName === "INPUT") return;
     const n = Number(e.key);
     if (Number.isInteger(n) && n >= 1 && n <= 9) pick(n - 1);
     else if (e.key === "ArrowDown" || e.key === "j") setIndex((i) => (i + 1) % options.length);
@@ -50,7 +56,7 @@ export function Picker<T>({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={title} width="w-[360px]" onKeyDown={onKeyDown}>
+    <Dialog open={open} onOpenChange={onOpenChange} title={title} width="w-[360px]" onKeyDown={onKeyDown} focusContent>
       <div>
         <div className="flex h-10 items-center gap-2 border-b border-line-subtle px-3">
           {context && <ContextChip>{context}</ContextChip>}
@@ -71,11 +77,13 @@ export function Picker<T>({
             >
               {option.icon}
               <span className="flex-1">{option.label}</span>
+              {option.detail && <span className="text-fg-tertiary">{option.detail}</span>}
               {option.value === current && <span className="text-[11px] text-fg-tertiary">Current</span>}
               {i < 9 && <Kbd>{i + 1}</Kbd>}
             </button>
           ))}
         </div>
+        {footer && <div className="border-t border-line-subtle p-1.5">{footer}</div>}
       </div>
     </Dialog>
   );

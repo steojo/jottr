@@ -16,6 +16,12 @@ export const commands = {
 	 *  The ticket gets a new number on the destination board and leaves its project.
 	 */
 	moveTicket: (id: string, boardId: string | null) => __TAURI_INVOKE<Ticket>("move_ticket", { id, boardId }),
+	/**  `due_date` is `YYYY-MM-DD`, or `None` to clear it. */
+	setDueDate: (id: string, dueDate: string | null) => __TAURI_INVOKE<Ticket>("set_due_date", { id, dueDate }),
+	listChecklist: (ticketId: string) => __TAURI_INVOKE<ChecklistItem[]>("list_checklist", { ticketId }),
+	addChecklistItem: (ticketId: string, text: string) => __TAURI_INVOKE<ChecklistItem>("add_checklist_item", { ticketId, text }),
+	updateChecklistItem: (id: string, patch: ChecklistPatch) => __TAURI_INVOKE<ChecklistItem>("update_checklist_item", { id, patch }),
+	deleteChecklistItem: (id: string) => __TAURI_INVOKE<null>("delete_checklist_item", { id }),
 };
 
 /* Types */
@@ -27,6 +33,20 @@ export type Board = {
 };
 
 export type BoardColor = "gray" | "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
+
+export type ChecklistItem = {
+	id: string,
+	ticketId: string,
+	text: string,
+	done: boolean,
+	position: number | null,
+};
+
+/**  Fields left as `None` are unchanged. */
+export type ChecklistPatch = {
+	text: string | null,
+	done: boolean | null,
+};
 
 export type NewBoard = {
 	name: string,
@@ -59,11 +79,15 @@ export type Ticket = {
 	dueDate: string | null,
 	position: number | null,
 	completedAt: number | null,
+	checklistDone: number,
+	checklistTotal: number,
 };
 
 /**  Fields left as `None` are unchanged. */
 export type TicketPatch = {
 	title: string | null,
+	/**  Markdown. */
+	description: string | null,
 	status: Status | null,
 	priority: Priority | null,
 };

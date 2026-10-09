@@ -103,7 +103,7 @@ Board  (e.g. Engineering, Marketing, Life)
 - Standard fields:
   - **ID**: board-prefixed key (e.g. `ENG-42`). Numbers count up per board. A ticket that moves to another board gets that board's next number.
   - **Title**
-  - **Description**
+  - **Description**: stored as markdown, edited as rich text with markdown shortcuts
   - **Status**
   - **Priority**: None, Low, Medium, High, Urgent
   - **Labels**
@@ -313,7 +313,7 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 | `⌘Enter` | Finish editing |
 
 ### 6.5 List rows
-- **Row height: 40px.** The whole row is the click target.
+- **Row height: 40px.** Clicking anywhere on a row opens the ticket.
 - Grouped by status by default. Each group header shows the status icon, name and count, plus a **"+"** on hover that creates a ticket in that status.
 - **Fixed layout on every row:** status, priority and ID on the left, then the title, then fixed slots on the right in the same order on every row: labels, checklist progress, project, due date. Empty slots take no space.
 - **Checklist progress:** a small progress ring plus a count (e.g. `2/5`). Only shown if the ticket has a checklist.
@@ -349,6 +349,9 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 ### 6.8 Ticket page
 - **The title is the largest element on the page.** No label above it, no extra chrome.
 - Main column: description, checklist, attachments.
+- The description saves automatically after a short pause in typing, and when leaving the ticket.
+- Checklist: click an item to edit it; clearing its text removes it. Enter in "Add an item…" adds and stays ready for the next.
+- The header shows the ticket's position in the list (e.g. `3 / 12`) with previous/next buttons (`K` / `J`).
 - Right column: properties (status, priority, labels, project, due date, repeat). The label is on the left and the value is right-aligned, so empty values are easy to spot.
 
 ### 6.9 Motion

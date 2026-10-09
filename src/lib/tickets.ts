@@ -30,15 +30,29 @@ export function ticketKey(t: Ticket): string | null {
 
 export const byPosition = (a: Ticket, b: Ticket) => (a.position ?? 0) - (b.position ?? 0);
 
+export type TicketGroup = { status: Status | null; tickets: Ticket[] };
+
+/** The list's display order: status groups (boards) or one flat list (Inbox). */
+export function groupTickets(tickets: Ticket[], grouped: boolean): TicketGroup[] {
+  const sorted = [...tickets].sort(byPosition);
+  if (!grouped) return [{ status: null, tickets: sorted }];
+  return LIST_ORDER.map((status) => ({ status, tickets: sorted.filter((t) => t.status === status) })).filter(
+    (g) => g.tickets.length > 0,
+  );
+}
+
+export const isFinished = (t: Ticket) => t.status === "done" || t.status === "canceled";
+
 /** Every key is required by the bindings; `null` leaves a field unchanged. */
 export function patch(fields: Partial<TicketPatch>): TicketPatch {
-  return { title: null, status: null, priority: null, ...fields };
+  return { title: null, description: null, status: null, priority: null, ...fields };
 }
 
 /** Mirrors `update_ticket` in Rust so optimistic updates match the server. */
 export function applyPatch(ticket: Ticket, p: TicketPatch, siblings: Ticket[]): Ticket {
   const next = { ...ticket };
   if (p.title !== null) next.title = p.title.trim();
+  if (p.description !== null) next.description = p.description;
   if (p.priority !== null) next.priority = p.priority;
   if (p.status !== null && p.status !== ticket.status) {
     const group = siblings.filter((t) => t.status === p.status).map((t) => t.position ?? 0);
@@ -69,4 +83,45 @@ export function suggestKey(name: string): string {
   if (words.length === 0) return "";
   const key = words.length > 1 ? words.map((w) => w[0]).join("") : words[0];
   return key.replace(/^[0-9]+/, "").slice(0, words.length > 1 ? 5 : 3);
+}
+
+// Due dates are local calendar days stored as `YYYY-MM-DD`.
+
+export function toDateKey(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+export function addDays(days: number, from = new Date()): Date {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function parseDateKey(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** "Today", "Tomorrow", "Oct 14", or "Oct 14, 2027" outside the current year. */
+export function formatDue(key: string): string {
+  if (key === toDateKey(new Date())) return "Today";
+  if (key === toDateKey(addDays(1))) return "Tomorrow";
+  const date = parseDateKey(key);
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
+}
+
+export const isOverdue = (t: Ticket) => t.dueDate !== null && !isFinished(t) && t.dueDate < toDateKey(new Date());
+
+/** Picker presets for `D`. "Next week" is the coming Monday. */
+export function duePresets(): { value: string; label: string }[] {
+  const today = new Date();
+  const toMonday = ((8 - today.getDay()) % 7) || 7;
+  return [
+    { value: toDateKey(today), label: "Today" },
+    { value: toDateKey(addDays(1)), label: "Tomorrow" },
+    { value: toDateKey(addDays(toMonday)), label: "Next week" },
+    { value: toDateKey(addDays(14)), label: "In two weeks" },
+  ];
 }

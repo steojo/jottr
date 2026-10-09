@@ -1,38 +1,33 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { Board, Status, Ticket } from "../bindings";
-import { useMoveTicket, useUpdateTicket } from "../lib/queries";
+import { useUpdateTicket } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
-import { LIST_ORDER, PRIORITIES, STATUSES, SWATCH_BG, byPosition, patch, statusLabel, ticketKey } from "../lib/tickets";
+import { formatDue, isFinished, isOverdue, patch, statusLabel, ticketKey, type TicketGroup } from "../lib/tickets";
+import { ChecklistProgress } from "./Checklist";
 import { PlusIcon, PriorityIcon, StatusIcon } from "./icons";
-import { Picker, type PickerOption } from "./Picker";
 import { TicketMenu } from "./TicketMenu";
+import { TicketPickers, type PickerKind } from "./TicketPickers";
 import { Kbd } from "./ui";
 
-type PickerKind = "status" | "priority" | "move";
-
-const STATUS_OPTIONS: PickerOption<Status>[] = STATUSES.map((s) => ({
-  ...s,
-  icon: <StatusIcon status={s.value} />,
-}));
-const PRIORITY_OPTIONS = PRIORITIES.map((p) => ({ ...p, icon: <PriorityIcon priority={p.value} /> }));
-
 export function TicketList({
-  tickets,
-  grouped,
+  groups,
   boards,
   activeId,
   onActiveChange,
+  onOpen,
   onCreate,
+  onMove,
   empty,
 }: {
-  tickets: Ticket[] | undefined;
-  /** Group by status (boards) or show one flat list (Inbox). */
-  grouped: boolean;
+  /** `undefined` while loading. */
+  groups: TicketGroup[] | undefined;
   boards: Board[];
   activeId: string | null;
   onActiveChange: (id: string | null) => void;
+  onOpen: (ticket: Ticket) => void;
   onCreate: (status: Status) => void;
+  onMove: (ticket: Ticket, boardId: string | null) => void;
   empty: { title: string; hint: string };
 }) {
   // Keyboard focus ring only shows after keyboard navigation, never after a click.
@@ -40,16 +35,8 @@ export function TicketList({
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const rows = useRef(new Map<string, HTMLDivElement>());
   const update = useUpdateTicket();
-  const move = useMoveTicket();
 
-  const groups = useMemo(() => {
-    const sorted = [...(tickets ?? [])].sort(byPosition);
-    if (!grouped) return [{ status: null, tickets: sorted }];
-    return LIST_ORDER.map((status) => ({ status, tickets: sorted.filter((t) => t.status === status) })).filter(
-      (g) => g.tickets.length > 0,
-    );
-  }, [tickets, grouped]);
-  const order = useMemo(() => groups.flatMap((g) => g.tickets), [groups]);
+  const order = useMemo(() => groups?.flatMap((g) => g.tickets) ?? [], [groups]);
   const active = order.find((t) => t.id === activeId);
   // IDs share one column, sized to the longest so titles line up.
   const idWidth = Math.max(0, ...order.map((t) => ticketKey(t)?.length ?? 0));
@@ -86,29 +73,15 @@ export function TicketList({
     arrowdown: () => step(1),
     k: () => step(-1),
     arrowup: () => step(-1),
+    enter: () => active && onOpen(active),
     s: () => openPicker("status"),
     p: () => openPicker("priority"),
+    d: () => openPicker("due"),
     m: () => openPicker("move"),
     escape: () => onActiveChange(null),
   });
 
-  const moveOptions = useMemo<PickerOption<string | null>[]>(() => {
-    const options: PickerOption<string | null>[] = boards
-      .filter((b) => b.id !== active?.boardId)
-      .map((b) => ({ value: b.id, label: b.name, icon: <span className={`size-2 rounded-sm ${SWATCH_BG[b.color]}`} /> }));
-    if (active?.boardId) options.push({ value: null, label: "Inbox" });
-    return options;
-  }, [boards, active?.boardId]);
-
-  function moveTicket(ticket: Ticket, boardId: string | null) {
-    // Keep the selection in place by handing it to a neighbour.
-    const i = order.findIndex((t) => t.id === ticket.id);
-    const neighbour = order[i + 1] ?? order[i - 1];
-    move.mutate({ ticket, boardId });
-    if (ticket.id === activeId) onActiveChange(neighbour?.id ?? null);
-  }
-
-  if (tickets === undefined) return <div className="flex-1" />;
+  if (groups === undefined) return <div className="flex-1" />;
 
   if (order.length === 0) {
     return (
@@ -120,8 +93,6 @@ export function TicketList({
       </div>
     );
   }
-
-  const context = active ? (ticketKey(active) ?? active.title) : undefined;
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -152,7 +123,7 @@ export function TicketList({
               onOpen={() => select(ticket)}
               onStatus={(status) => update.mutate({ ticket, patch: patch({ status }) })}
               onPriority={(priority) => update.mutate({ ticket, patch: patch({ priority }) })}
-              onMove={(boardId) => moveTicket(ticket, boardId)}
+              onMove={(boardId) => onMove(ticket, boardId)}
             >
               <TicketRow
                 ticket={ticket}
@@ -163,7 +134,10 @@ export function TicketList({
                   if (el) rows.current.set(ticket.id, el);
                   else rows.current.delete(ticket.id);
                 }}
-                onClick={() => select(ticket)}
+                onClick={() => {
+                  select(ticket);
+                  onOpen(ticket);
+                }}
                 onPick={(kind) => openPickerFor(ticket, kind)}
               />
             </TicketMenu>
@@ -171,32 +145,7 @@ export function TicketList({
         </section>
       ))}
 
-      <Picker
-        open={picker === "status"}
-        onOpenChange={(open) => !open && setPicker(null)}
-        title="Change status"
-        context={context}
-        options={STATUS_OPTIONS}
-        current={active?.status}
-        onSelect={(status) => active && update.mutate({ ticket: active, patch: patch({ status }) })}
-      />
-      <Picker
-        open={picker === "priority"}
-        onOpenChange={(open) => !open && setPicker(null)}
-        title="Change priority"
-        context={context}
-        options={PRIORITY_OPTIONS}
-        current={active?.priority}
-        onSelect={(priority) => active && update.mutate({ ticket: active, patch: patch({ priority }) })}
-      />
-      <Picker
-        open={picker === "move" && moveOptions.length > 0}
-        onOpenChange={(open) => !open && setPicker(null)}
-        title="Move to"
-        context={context}
-        options={moveOptions}
-        onSelect={(boardId) => active && moveTicket(active, boardId)}
-      />
+      <TicketPickers ticket={active} boards={boards} kind={picker} onClose={() => setPicker(null)} onMove={onMove} />
     </div>
   );
 }
@@ -220,7 +169,6 @@ function TicketRow({
   onPick: (kind: PickerKind) => void;
 }) {
   const key = ticketKey(ticket);
-  const finished = ticket.status === "done" || ticket.status === "canceled";
   return (
     <div
       ref={rowRef}
@@ -245,8 +193,16 @@ function TicketRow({
           {key}
         </span>
       )}
-      <span className={`flex-1 truncate ${finished ? "text-fg-tertiary" : ""}`}>{ticket.title}</span>
-      {ticket.dueDate && <span className="font-mono text-[11px] text-fg-tertiary">{ticket.dueDate}</span>}
+      <span className={`flex-1 truncate ${isFinished(ticket) ? "text-fg-tertiary" : ""}`}>{ticket.title}</span>
+      {/* Fixed slots, same order on every row (PRD §6.5). Empty slots take no space. */}
+      {ticket.checklistTotal > 0 && <ChecklistProgress done={ticket.checklistDone} total={ticket.checklistTotal} />}
+      {ticket.dueDate && (
+        <span
+          className={`shrink-0 font-mono text-[11px] ${isOverdue(ticket) ? "text-status-error" : "text-fg-tertiary"}`}
+        >
+          {formatDue(ticket.dueDate)}
+        </span>
+      )}
     </div>
   );
 }

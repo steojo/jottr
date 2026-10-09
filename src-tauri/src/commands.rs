@@ -1,7 +1,7 @@
 use tauri::State;
 
 use crate::db::Db;
-use crate::models::{Board, NewBoard, NewTicket, Ticket, TicketPatch};
+use crate::models::{Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Ticket, TicketPatch};
 use crate::store::{self, err, CmdResult};
 
 #[tauri::command]
@@ -42,4 +42,39 @@ pub async fn update_ticket(db: State<'_, Db>, id: String, patch: TicketPatch) ->
 #[specta::specta]
 pub async fn move_ticket(db: State<'_, Db>, id: String, board_id: Option<String>) -> CmdResult<Ticket> {
     store::move_ticket(&mut *db.0.lock().map_err(err)?, id, board_id)
+}
+
+/// `due_date` is `YYYY-MM-DD`, or `None` to clear it.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_due_date(db: State<'_, Db>, id: String, due_date: Option<String>) -> CmdResult<Ticket> {
+    store::set_due_date(&*db.0.lock().map_err(err)?, id, due_date)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn list_checklist(db: State<'_, Db>, ticket_id: String) -> CmdResult<Vec<ChecklistItem>> {
+    store::list_checklist(&*db.0.lock().map_err(err)?, ticket_id)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn add_checklist_item(db: State<'_, Db>, ticket_id: String, text: String) -> CmdResult<ChecklistItem> {
+    store::add_checklist_item(&*db.0.lock().map_err(err)?, ticket_id, text)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn update_checklist_item(
+    db: State<'_, Db>,
+    id: String,
+    patch: ChecklistPatch,
+) -> CmdResult<ChecklistItem> {
+    store::update_checklist_item(&*db.0.lock().map_err(err)?, id, patch)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_checklist_item(db: State<'_, Db>, id: String) -> CmdResult<()> {
+    store::delete_checklist_item(&*db.0.lock().map_err(err)?, id)
 }

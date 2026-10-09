@@ -3,7 +3,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::db::{new_id, now};
-use crate::models::{Board, NewBoard, NewTicket, Status, Ticket, TicketPatch};
+use crate::models::{
+    Board, ChecklistItem, ChecklistPatch, NewBoard, NewTicket, Status, Ticket, TicketPatch,
+};
 
 pub type CmdResult<T> = Result<T, String>;
 
@@ -162,6 +164,14 @@ pub fn update_ticket(conn: &mut Connection, id: String, patch: TicketPatch) -> C
         .map_err(err)?;
     }
 
+    if let Some(description) = patch.description {
+        tx.execute(
+            "UPDATE tickets SET description = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, description, ts],
+        )
+        .map_err(err)?;
+    }
+
     if let Some(priority) = patch.priority {
         tx.execute(
             "UPDATE tickets SET priority = ?2, updated_at = ?3 WHERE id = ?1",
@@ -214,6 +224,95 @@ pub fn move_ticket(conn: &mut Connection, id: String, board_id: Option<String>) 
     get_ticket(conn, &id)
 }
 
+fn is_valid_date(date: &str) -> bool {
+    let b = date.as_bytes();
+    b.len() == 10
+        && b[4] == b'-'
+        && b[7] == b'-'
+        && b.iter().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
+}
+
+/// `due_date` is `YYYY-MM-DD`, or `None` to clear it.
+pub fn set_due_date(conn: &Connection, id: String, due_date: Option<String>) -> CmdResult<Ticket> {
+    if due_date.as_deref().is_some_and(|d| !is_valid_date(d)) {
+        return Err("Due date must be YYYY-MM-DD".into());
+    }
+    let changed = conn
+        .execute(
+            "UPDATE tickets SET due_date = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, due_date, now()],
+        )
+        .map_err(err)?;
+    if changed == 0 {
+        return Err("Ticket not found".into());
+    }
+    get_ticket(conn, &id)
+}
+
+fn get_checklist_item(conn: &Connection, id: &str) -> CmdResult<ChecklistItem> {
+    conn.query_row(
+        &format!("SELECT {} FROM checklist_items WHERE id = ?1", ChecklistItem::COLUMNS),
+        [id],
+        ChecklistItem::from_row,
+    )
+    .map_err(err)
+}
+
+pub fn list_checklist(conn: &Connection, ticket_id: String) -> CmdResult<Vec<ChecklistItem>> {
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {} FROM checklist_items WHERE ticket_id = ?1 ORDER BY position",
+            ChecklistItem::COLUMNS
+        ))
+        .map_err(err)?;
+    let items = stmt.query_map([ticket_id], ChecklistItem::from_row).map_err(err)?;
+    items.collect::<Result<_, _>>().map_err(err)
+}
+
+/// New items go to the end of the checklist.
+pub fn add_checklist_item(conn: &Connection, ticket_id: String, text: String) -> CmdResult<ChecklistItem> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Checklist item can't be empty".into());
+    }
+    let position: f64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM checklist_items WHERE ticket_id = ?1",
+            [&ticket_id],
+            |row| row.get(0),
+        )
+        .map_err(err)?;
+    let id = new_id();
+    conn.execute(
+        "INSERT INTO checklist_items (id, ticket_id, text, position, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, ticket_id, text, position, now()],
+    )
+    .map_err(err)?;
+    get_checklist_item(conn, &id)
+}
+
+pub fn update_checklist_item(conn: &Connection, id: String, patch: ChecklistPatch) -> CmdResult<ChecklistItem> {
+    if let Some(text) = patch.text {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("Checklist item can't be empty".into());
+        }
+        conn.execute("UPDATE checklist_items SET text = ?2 WHERE id = ?1", params![id, text])
+            .map_err(err)?;
+    }
+    if let Some(done) = patch.done {
+        conn.execute("UPDATE checklist_items SET done = ?2 WHERE id = ?1", params![id, done])
+            .map_err(err)?;
+    }
+    get_checklist_item(conn, &id)
+}
+
+pub fn delete_checklist_item(conn: &Connection, id: String) -> CmdResult<()> {
+    conn.execute("DELETE FROM checklist_items WHERE id = ?1", [id]).map_err(err)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,7 +337,7 @@ mod tests {
     }
 
     fn set_status(conn: &mut Connection, t: &Ticket, status: Status) -> Ticket {
-        let patch = TicketPatch { title: None, status: Some(status), priority: None };
+        let patch = TicketPatch { title: None, description: None, status: Some(status), priority: None };
         update_ticket(conn, t.id.clone(), patch).unwrap()
     }
 
@@ -309,5 +408,39 @@ mod tests {
         let mut conn = db();
         let input = NewTicket { board_id: None, title: "   ".into(), status: Status::Backlog, priority: Priority::None };
         assert!(create_ticket(&mut conn, input).is_err());
+    }
+
+    #[test]
+    fn saves_descriptions_and_due_dates() {
+        let mut conn = db();
+        let t = ticket(&mut conn, None, Status::Backlog);
+        let patch = TicketPatch { title: None, description: Some("# Notes".into()), status: None, priority: None };
+        assert_eq!(update_ticket(&mut conn, t.id.clone(), patch).unwrap().description, "# Notes");
+
+        let due = set_due_date(&conn, t.id.clone(), Some("2026-10-14".into())).unwrap();
+        assert_eq!(due.due_date.as_deref(), Some("2026-10-14"));
+        assert!(set_due_date(&conn, t.id.clone(), Some("14/10/2026".into())).is_err());
+        assert_eq!(set_due_date(&conn, t.id.clone(), None).unwrap().due_date, None);
+        assert!(set_due_date(&conn, "missing".into(), None).is_err());
+    }
+
+    #[test]
+    fn checklists_are_ordered_and_counted_on_the_ticket() {
+        let mut conn = db();
+        let t = ticket(&mut conn, None, Status::Backlog);
+        let first = add_checklist_item(&conn, t.id.clone(), "First".into()).unwrap();
+        let second = add_checklist_item(&conn, t.id.clone(), " Second ".into()).unwrap();
+        assert!(add_checklist_item(&conn, t.id.clone(), "  ".into()).is_err());
+        assert_eq!(second.text, "Second");
+        assert!(first.position < second.position);
+
+        let patch = ChecklistPatch { text: None, done: Some(true) };
+        assert!(update_checklist_item(&conn, first.id.clone(), patch).unwrap().done);
+        let counted = &list_tickets(&conn, None).unwrap()[0];
+        assert_eq!((counted.checklist_done, counted.checklist_total), (1, 2));
+
+        delete_checklist_item(&conn, first.id).unwrap();
+        let items = list_checklist(&conn, t.id).unwrap();
+        assert_eq!(items.iter().map(|i| i.text.as_str()).collect::<Vec<_>>(), ["Second"]);
     }
 }

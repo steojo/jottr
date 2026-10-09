@@ -5,7 +5,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
 
 /// Applied in order. A database at `user_version` N has run the first N migrations.
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_init.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_init.sql"),
+    include_str!("../migrations/0002_checklists.sql"),
+];
 
 pub struct Db(pub Mutex<Connection>);
 

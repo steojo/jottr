@@ -1,5 +1,5 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
-import type { KeyboardEvent, ReactNode } from "react";
+import { useRef, type KeyboardEvent, type ReactNode } from "react";
 
 export function Kbd({ children }: { children: ReactNode }) {
   return (
@@ -25,6 +25,7 @@ export function Dialog({
   title,
   width = "w-[480px]",
   onKeyDown,
+  focusContent,
   children,
 }: {
   open: boolean;
@@ -32,15 +33,24 @@ export function Dialog({
   title: string;
   width?: string;
   onKeyDown?: (e: KeyboardEvent) => void;
+  /** Focus the dialog itself on open instead of its first input, so keys reach `onKeyDown`. */
+  focusContent?: boolean;
   children: ReactNode;
 }) {
+  const content = useRef<HTMLDivElement>(null);
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-50 bg-black/40" />
         <RadixDialog.Content
+          ref={content}
           aria-describedby={undefined}
           onKeyDown={onKeyDown}
+          onOpenAutoFocus={(e) => {
+            if (!focusContent) return;
+            e.preventDefault();
+            content.current?.focus();
+          }}
           // Keep focus off whatever was focused before, so Enter/Space can't re-trigger it.
           onCloseAutoFocus={(e) => e.preventDefault()}
           className={`fixed top-[18vh] z-50 left-1/2 -translate-x-1/2 ${width} overflow-hidden rounded-xl border border-line bg-surface-elevated shadow-2xl shadow-black/50 outline-none`}
