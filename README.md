@@ -2,6 +2,8 @@
 
 A lightweight, fast Kanban app for macOS. See [PRD.md](PRD.md) for the full spec.
 
+![Jottr board view](docs/screenshot.png)
+
 ## Develop
 
 ```sh
