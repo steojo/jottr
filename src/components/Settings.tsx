@@ -29,21 +29,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         <h2 className="px-1 font-mono text-[10px] tracking-wider text-fg-quaternary uppercase">Archive</h2>
         <div className="divide-y divide-line-subtle rounded-lg border border-line-subtle">
           <Setting title="Auto-archive" detail="Move Done tickets to the Archive after a while, to keep boards clear.">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={settings.autoArchive}
-              aria-label="Auto-archive"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => save({ autoArchive: !settings.autoArchive })}
-              className={`relative h-5 w-9 shrink-0 rounded-full ${settings.autoArchive ? "bg-accent" : "bg-line-strong"} ${ring}`}
-            >
-              <span
-                className={`absolute top-0.5 size-4 rounded-full ${
-                  settings.autoArchive ? "left-[18px] bg-on-accent" : "left-0.5 bg-fg-secondary"
-                }`}
-              />
-            </button>
+            <Switch label="Auto-archive" checked={settings.autoArchive} onChange={(autoArchive) => save({ autoArchive })} />
           </Setting>
           <Setting title="Archive after" detail="How long a ticket stays in Done first." disabled={!settings.autoArchive}>
             <DropdownMenu.Root>
@@ -75,8 +61,47 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             </DropdownMenu.Root>
           </Setting>
         </div>
+
+        <h2 className="mt-6 px-1 font-mono text-[10px] tracking-wider text-fg-quaternary uppercase">Board</h2>
+        <div className="divide-y divide-line-subtle rounded-lg border border-line-subtle">
+          <Setting
+            title="Show Backlog column"
+            detail="Backlog tickets still show in the list view and search. New tickets on the board start in Ready."
+          >
+            <Switch
+              label="Show Backlog column"
+              checked={settings.showBacklog}
+              onChange={(showBacklog) => save({ showBacklog })}
+            />
+          </Setting>
+          <Setting title="Show Canceled column" detail="Canceled tickets still show in the list view and search.">
+            <Switch
+              label="Show Canceled column"
+              checked={settings.showCanceled}
+              onChange={(showCanceled) => save({ showCanceled })}
+            />
+          </Setting>
+        </div>
       </div>
     </div>
+  );
+}
+
+function Switch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => onChange(!checked)}
+      className={`relative h-5 w-9 shrink-0 rounded-full ${checked ? "bg-accent" : "bg-line-strong"} ${ring}`}
+    >
+      <span
+        className={`absolute top-0.5 size-4 rounded-full ${checked ? "left-[18px] bg-on-accent" : "left-0.5 bg-fg-secondary"}`}
+      />
+    </button>
   );
 }
 

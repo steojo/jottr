@@ -607,8 +607,9 @@ pub fn update_settings(conn: &Connection, settings: Settings) -> CmdResult<Setti
         return Err("Archive delay must be between 1 and 365 days".into());
     }
     conn.execute(
-        "UPDATE settings SET auto_archive = ?1, archive_after_days = ?2 WHERE id = 1",
-        params![settings.auto_archive, settings.archive_after_days],
+        "UPDATE settings SET auto_archive = ?1, archive_after_days = ?2, show_canceled = ?3, show_backlog = ?4
+         WHERE id = 1",
+        params![settings.auto_archive, settings.archive_after_days, settings.show_canceled, settings.show_backlog],
     )
     .map_err(err)?;
     auto_archive(conn)?;
@@ -1185,18 +1186,27 @@ mod tests {
         let defaults = get_settings(&conn).unwrap();
         assert!(defaults.auto_archive);
         assert_eq!(defaults.archive_after_days, 7);
+        assert!(!defaults.show_canceled);
+        assert!(defaults.show_backlog);
 
         let t = titled(&mut conn, None, "Done", Status::Done);
         finished_days_ago(&conn, &t, 3);
-        update_settings(&conn, Settings { auto_archive: false, archive_after_days: 1 }).unwrap();
+        update_settings(&conn, Settings { auto_archive: false, archive_after_days: 1, show_canceled: false, show_backlog: true }).unwrap();
         assert_eq!(auto_archive(&conn).unwrap(), 0, "off");
         assert!(list_archived(&conn).unwrap().is_empty());
 
-        let saved = update_settings(&conn, Settings { auto_archive: true, archive_after_days: 2 }).unwrap();
-        assert_eq!((saved.auto_archive, saved.archive_after_days), (true, 2));
+        let saved = update_settings(
+            &conn,
+            Settings { auto_archive: true, archive_after_days: 2, show_canceled: true, show_backlog: false },
+        )
+        .unwrap();
+        assert_eq!(
+            (saved.auto_archive, saved.archive_after_days, saved.show_canceled, saved.show_backlog),
+            (true, 2, true, false)
+        );
         assert_eq!(list_archived(&conn).unwrap().len(), 1, "saving archives anything now due");
 
-        assert!(update_settings(&conn, Settings { auto_archive: true, archive_after_days: 0 }).is_err());
+        assert!(update_settings(&conn, Settings { auto_archive: true, archive_after_days: 0, show_canceled: false, show_backlog: true }).is_err());
     }
 
     #[test]

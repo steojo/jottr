@@ -96,6 +96,8 @@ function App() {
     "board",
   );
   const showBoard = view.kind === "board" && layout === "board";
+  // New tickets start in Backlog, or in Ready on a board that hides its Backlog column.
+  const newStatus: Status = showBoard && settings?.showBacklog === false ? "ready" : "backlog";
 
   // What's on screen: the view's tickets, narrowed to a project (a project is a filter
   // over its board), then by the active filters.
@@ -250,7 +252,7 @@ function App() {
   const toggleSettings = () => navigate(view.kind === "settings" ? settingsReturn.current : { kind: "settings" });
 
   useShortcuts({
-    c: () => setCreating("backlog"),
+    c: () => setCreating(newStatus),
     "mod+k": () => setCommandMenu("all"),
     "/": () => setCommandMenu("search"),
     "?": () => setShowShortcuts(true),
@@ -292,7 +294,7 @@ function App() {
     ticketCommand("delete", "Delete ticket…", "⌘ ⌫", () => setDeletingTicket(target), "remove");
   }
   commands.push(
-    { id: "new-ticket", label: "New ticket", group: "Create", shortcut: "C", icon: <PlusIcon />, run: () => setCreating("backlog") },
+    { id: "new-ticket", label: "New ticket", group: "Create", shortcut: "C", icon: <PlusIcon />, run: () => setCreating(newStatus) },
     { id: "new-board", label: "New board", group: "Create", icon: <PlusIcon />, run: () => setCreatingBoard(true) },
   );
   if (board) {
@@ -494,7 +496,7 @@ function App() {
                     type="button"
                     title="New ticket · C"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setCreating("backlog")}
+                    onClick={() => setCreating(newStatus)}
                     className="ml-1 h-7 rounded-md bg-accent px-3 text-[12px] font-medium text-on-accent hover:bg-accent-hover"
                   >
                     New ticket

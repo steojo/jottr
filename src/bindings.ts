@@ -137,6 +137,10 @@ export type Settings = {
 	/**  Moves Done tickets to the Archive once they've been done for `archive_after_days`. */
 	autoArchive: boolean,
 	archiveAfterDays: number,
+	/**  Shows a Canceled column on boards. */
+	showCanceled: boolean,
+	/**  Shows a Backlog column on boards. */
+	showBacklog: boolean,
 };
 
 export type Status = "backlog" | "ready" | "in_progress" | "in_review" | "done" | "canceled";

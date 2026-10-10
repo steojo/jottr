@@ -255,13 +255,22 @@ pub struct Settings {
     /// Moves Done tickets to the Archive once they've been done for `archive_after_days`.
     pub auto_archive: bool,
     pub archive_after_days: i32,
+    /// Shows a Canceled column on boards.
+    pub show_canceled: bool,
+    /// Shows a Backlog column on boards.
+    pub show_backlog: bool,
 }
 
 impl Settings {
-    pub const COLUMNS: &'static str = "auto_archive, archive_after_days";
+    pub const COLUMNS: &'static str = "auto_archive, archive_after_days, show_canceled, show_backlog";
 
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
-        Ok(Self { auto_archive: row.get(0)?, archive_after_days: row.get(1)? })
+        Ok(Self {
+            auto_archive: row.get(0)?,
+            archive_after_days: row.get(1)?,
+            show_canceled: row.get(2)?,
+            show_backlog: row.get(3)?,
+        })
     }
 }
 

@@ -25,7 +25,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { Board as BoardModel, Label, Project, Status, Ticket } from "../bindings";
-import { useLabels, useRepositionTicket, useUpdateTicket } from "../lib/queries";
+import { useLabels, useRepositionTicket, useSettings, useUpdateTicket } from "../lib/queries";
 import { useShortcuts } from "../lib/shortcuts";
 import { usePersistentState } from "../lib/storage";
 import {
@@ -98,8 +98,17 @@ export function Board({
   const update = useUpdateTicket();
   const reposition = useRepositionTicket();
   const labels = useLabels().data ?? [];
+  const settings = useSettings().data;
+  const showBacklog = settings?.showBacklog ?? true;
+  const showCanceled = settings?.showCanceled ?? false;
 
-  const columns = useMemo(() => boardColumns(tickets ?? []), [tickets]);
+  const columns = useMemo(
+    () =>
+      boardColumns(tickets ?? []).filter(
+        (c) => (showBacklog || c.status !== "backlog") && (showCanceled || c.status !== "canceled"),
+      ),
+    [tickets, showBacklog, showCanceled],
+  );
   const byId = useMemo(() => new Map((tickets ?? []).map((t) => [t.id, t])), [tickets]);
   const ids: Columns =
     dragColumns ?? (Object.fromEntries(columns.map((c) => [c.status, c.tickets.map((t) => t.id)])) as Columns);
