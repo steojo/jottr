@@ -274,6 +274,22 @@ pub fn move_ticket(
             params![id, board_id, number, position],
         )
         .map_err(err)?;
+        // Labels belong to a board: keep the ones the new board has under the same name, drop the rest.
+        tx.execute(
+            "INSERT OR IGNORE INTO ticket_labels (ticket_id, label_id)
+             SELECT tl.ticket_id, nl.id FROM ticket_labels tl
+             JOIN labels ol ON ol.id = tl.label_id
+             JOIN labels nl ON nl.board_id = ?2 AND nl.name = ol.name
+             WHERE tl.ticket_id = ?1",
+            params![id, board_id],
+        )
+        .map_err(err)?;
+        tx.execute(
+            "DELETE FROM ticket_labels
+             WHERE ticket_id = ?1 AND label_id NOT IN (SELECT id FROM labels WHERE board_id IS ?2)",
+            params![id, board_id],
+        )
+        .map_err(err)?;
     }
     tx.execute(
         "UPDATE tickets SET project_id = ?2, updated_at = ?3 WHERE id = ?1",
@@ -395,25 +411,32 @@ fn get_label(conn: &Connection, id: &str) -> CmdResult<Label> {
         .map_err(err)
 }
 
-/// Turns a uniqueness violation into a readable message; names are unique ignoring case.
+/// Turns a uniqueness violation into a readable message; names are unique per board, ignoring case.
 fn label_error(name: &str) -> impl Fn(rusqlite::Error) -> String + '_ {
     move |e| match e {
         rusqlite::Error::SqliteFailure(f, _) if f.code == rusqlite::ErrorCode::ConstraintViolation => {
-            format!("A label named {name} already exists")
+            format!("This board already has a label named {name}")
         }
         e => err(e),
     }
 }
 
-pub fn create_label(conn: &Connection, name: String, color: Color) -> CmdResult<Label> {
+/// Creates a label on a board. Only that board's tickets can use it.
+pub fn create_label(conn: &Connection, board_id: String, name: String, color: Color) -> CmdResult<Label> {
     let name = name.trim();
     if name.is_empty() {
         return Err("Label name can't be empty".into());
     }
+    let board_exists: bool = conn
+        .query_row("SELECT EXISTS (SELECT 1 FROM boards WHERE id = ?1)", [&board_id], |row| row.get(0))
+        .map_err(err)?;
+    if !board_exists {
+        return Err("Board not found".into());
+    }
     let id = new_id();
     conn.execute(
-        "INSERT INTO labels (id, name, color, created_at) VALUES (?1, ?2, ?3, ?4)",
-        params![id, name, color, now()],
+        "INSERT INTO labels (id, board_id, name, color, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![id, board_id, name, color, now()],
     )
     .map_err(label_error(name))?;
     get_label(conn, &id)
@@ -441,14 +464,28 @@ pub fn delete_label(conn: &Connection, id: String) -> CmdResult<()> {
     Ok(())
 }
 
-/// Adds the label to the ticket, or removes it when `applied` is false.
 /// Marks a ticket as updated, for edits stored outside the tickets table: labels, checklist and attachments.
 fn touch(conn: &Connection, ticket_id: &str) -> CmdResult<()> {
     conn.execute("UPDATE tickets SET updated_at = ?2 WHERE id = ?1", params![ticket_id, now()]).map_err(err)?;
     Ok(())
 }
 
+/// Adds the label to the ticket, or removes it when `applied` is false.
+/// Only labels from the ticket's own board can be added, so Inbox tickets have none.
 pub fn set_ticket_label(conn: &Connection, ticket_id: String, label_id: String, applied: bool) -> CmdResult<Ticket> {
+    if applied {
+        let same_board: bool = conn
+            .query_row(
+                "SELECT EXISTS (SELECT 1 FROM labels l JOIN tickets t ON t.board_id = l.board_id
+                                WHERE l.id = ?1 AND t.id = ?2)",
+                params![label_id, ticket_id],
+                |row| row.get(0),
+            )
+            .map_err(err)?;
+        if !same_board {
+            return Err("Labels can only be added to tickets on their board".into());
+        }
+    }
     let changed = if applied {
         conn.execute(
             "INSERT OR IGNORE INTO ticket_labels (ticket_id, label_id) VALUES (?1, ?2)",
@@ -1068,15 +1105,22 @@ mod tests {
     }
 
     #[test]
-    fn labels_are_unique_and_attach_to_tickets() {
+    fn labels_are_unique_per_board_and_attach_to_its_tickets() {
         let mut conn = db();
-        let bug = create_label(&conn, " bug ".into(), Color::Red).unwrap();
-        let perf = create_label(&conn, "perf".into(), Color::Yellow).unwrap();
-        assert_eq!(bug.name, "bug");
-        assert!(create_label(&conn, "BUG".into(), Color::Blue).is_err(), "names are unique ignoring case");
-        assert!(create_label(&conn, " ".into(), Color::Blue).is_err());
+        let eng = board(&conn, "ENG");
+        let life = board(&conn, "LIF");
+        let bug = create_label(&conn, eng.id.clone(), " bug ".into(), Color::Red).unwrap();
+        let perf = create_label(&conn, eng.id.clone(), "perf".into(), Color::Yellow).unwrap();
+        assert_eq!((bug.name.as_str(), bug.board_id.as_str()), ("bug", eng.id.as_str()));
+        assert!(create_label(&conn, eng.id.clone(), "BUG".into(), Color::Blue).is_err(), "unique ignoring case");
+        assert!(create_label(&conn, eng.id.clone(), " ".into(), Color::Blue).is_err());
+        assert!(create_label(&conn, "nope".into(), "x".into(), Color::Blue).is_err(), "unknown board");
+        let life_bug = create_label(&conn, life.id.clone(), "bug".into(), Color::Red).unwrap();
 
-        let t = ticket(&mut conn, None, Status::Backlog);
+        let inbox = ticket(&mut conn, None, Status::Backlog);
+        assert!(set_ticket_label(&conn, inbox.id.clone(), bug.id.clone(), true).is_err(), "Inbox tickets have no labels");
+        let t = ticket(&mut conn, Some(&eng.id), Status::Backlog);
+        assert!(set_ticket_label(&conn, t.id.clone(), life_bug.id, true).is_err(), "another board's label");
         set_ticket_label(&conn, t.id.clone(), bug.id.clone(), true).unwrap();
         set_ticket_label(&conn, t.id.clone(), bug.id.clone(), true).unwrap();
         let tagged = set_ticket_label(&conn, t.id.clone(), perf.id.clone(), true).unwrap();
@@ -1094,20 +1138,39 @@ mod tests {
         assert_eq!((renamed.name.as_str(), renamed.color), ("defect", Color::Orange));
 
         delete_label(&conn, bug.id).unwrap();
-        assert!(list_tickets(&conn, None).unwrap()[0].label_ids.is_empty());
-        assert_eq!(list_labels(&conn).unwrap().len(), 1);
+        assert!(list_tickets(&conn, Some(eng.id)).unwrap()[0].label_ids.is_empty());
+        assert_eq!(list_labels(&conn).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn moving_boards_keeps_labels_with_the_same_name() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let life = board(&conn, "LIF");
+        let eng_bug = create_label(&conn, eng.id.clone(), "bug".into(), Color::Red).unwrap();
+        let eng_perf = create_label(&conn, eng.id.clone(), "perf".into(), Color::Yellow).unwrap();
+        let life_bug = create_label(&conn, life.id.clone(), "Bug".into(), Color::Red).unwrap();
+        let t = ticket(&mut conn, Some(&eng.id), Status::Backlog);
+        set_ticket_label(&conn, t.id.clone(), eng_bug.id, true).unwrap();
+        set_ticket_label(&conn, t.id.clone(), eng_perf.id, true).unwrap();
+
+        let moved = move_ticket(&mut conn, t.id.clone(), Some(life.id.clone()), None).unwrap();
+        assert_eq!(moved.label_ids, vec![life_bug.id], "bug matches ignoring case; perf is dropped");
+        let in_inbox = move_ticket(&mut conn, t.id, None, None).unwrap();
+        assert!(in_inbox.label_ids.is_empty());
     }
 
     #[test]
     fn deleting_a_ticket_removes_its_checklist_and_labels() {
         let mut conn = db();
-        let t = ticket(&mut conn, None, Status::Backlog);
+        let eng = board(&conn, "ENG");
+        let t = ticket(&mut conn, Some(&eng.id), Status::Backlog);
         add_checklist_item(&conn, t.id.clone(), "Step".into()).unwrap();
-        let bug = create_label(&conn, "bug".into(), Color::Red).unwrap();
+        let bug = create_label(&conn, eng.id.clone(), "bug".into(), Color::Red).unwrap();
         set_ticket_label(&conn, t.id.clone(), bug.id.clone(), true).unwrap();
 
         delete_ticket(&conn, &temp_root(), t.id.clone()).unwrap();
-        assert!(list_tickets(&conn, None).unwrap().is_empty());
+        assert!(list_tickets(&conn, Some(eng.id)).unwrap().is_empty());
         assert!(list_checklist(&conn, t.id.clone()).unwrap().is_empty());
         let links: i64 = conn.query_row("SELECT COUNT(*) FROM ticket_labels", [], |r| r.get(0)).unwrap();
         assert_eq!(links, 0);
@@ -1178,7 +1241,8 @@ mod tests {
     #[test]
     fn updated_at_tracks_edits_but_not_reordering() {
         let mut conn = db();
-        let t = titled(&mut conn, None, "Ticket", Status::Backlog);
+        let eng = board(&conn, "ENG");
+        let t = titled(&mut conn, Some(&eng.id), "Ticket", Status::Backlog);
         let reset = |conn: &Connection| conn.execute("UPDATE tickets SET updated_at = 0", []).unwrap();
         let updated = |conn: &Connection| get_ticket(conn, &t.id).unwrap().updated_at;
 
@@ -1188,7 +1252,7 @@ mod tests {
         reposition_ticket(&conn, t.id.clone(), Status::Ready, 5.0).unwrap();
         assert!(updated(&conn) > 0.0, "a status change is");
 
-        let label = create_label(&conn, "Bug".into(), Color::Red).unwrap();
+        let label = create_label(&conn, eng.id.clone(), "Bug".into(), Color::Red).unwrap();
         reset(&conn);
         set_ticket_label(&conn, t.id.clone(), label.id, true).unwrap();
         assert!(updated(&conn) > 0.0, "adding a label");

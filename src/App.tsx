@@ -1,7 +1,7 @@
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import type { Project, Status, Ticket } from "./bindings";
+import type { Label, Project, Status, Ticket } from "./bindings";
 import { Board } from "./components/Board";
 import { CommandMenu, type Command } from "./components/CommandMenu";
 import { CreateBoardDialog } from "./components/CreateBoardDialog";
@@ -24,6 +24,7 @@ import {
   useDeleteProject,
   useDeleteTicket,
   useFocus,
+  useLabels,
   useMoveTicket,
   useProjects,
   useRenameProject,
@@ -75,6 +76,7 @@ function App() {
 
   const boards = useBoards().data ?? [];
   const projects = useProjects().data ?? [];
+  const allLabels = useLabels().data;
   const board = view.kind === "board" ? boards.find((b) => b.id === view.boardId) : undefined;
   const project = view.kind === "board" ? projects.find((p) => p.id === view.projectId) : undefined;
   const boardTickets = useTickets(view.kind === "board" ? view.boardId : null).data;
@@ -124,6 +126,18 @@ function App() {
     [tickets, view.kind],
   );
   // The order J/K follow on the ticket page matches what's on screen.
+  // Filters offer the labels this view's tickets can have: the board's own, none in the Inbox,
+  // and every board's in My Focus and the Archive, with the board key where names repeat.
+  const filterLabels = useMemo(() => {
+    const labels = allLabels ?? [];
+    if (view.kind === "board") return labels.filter((l) => l.boardId === view.boardId);
+    if (view.kind !== "focus" && view.kind !== "archive") return [];
+    const repeated = (l: Label) => labels.some((o) => o.id !== l.id && o.name.toLowerCase() === l.name.toLowerCase());
+    return labels.map((l) =>
+      repeated(l) ? { ...l, name: `${l.name} · ${boards.find((b) => b.id === l.boardId)?.key ?? ""}` } : l,
+    );
+  }, [allLabels, view, boards]);
+
   const order = useMemo(
     () => (showBoard ? boardColumns(tickets ?? []) : (groups ?? [])).flatMap((g) => g.tickets),
     [showBoard, tickets, groups],
@@ -512,6 +526,7 @@ function App() {
             filters={filters}
             onChange={setFilters}
             onEdit={() => setFiltering(true)}
+            labels={filterLabels}
             projects={projects.filter((p) => p.boardId === board?.id)}
           />
         )}
@@ -585,6 +600,7 @@ function App() {
         onOpenChange={setFiltering}
         filters={filters}
         onChange={setFilters}
+        labels={filterLabels}
         projects={board && !project ? projects.filter((p) => p.boardId === board.id) : null}
       />
       <ShortcutSheet open={showShortcuts} onOpenChange={setShowShortcuts} />

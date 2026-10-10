@@ -263,7 +263,7 @@ export function useChecklist(ticket: Ticket) {
 
 const labelsKey = ["labels"] as const;
 
-/** All labels, sorted by name. Labels are shared by every board. */
+/** Every board's labels, sorted by name. Each belongs to one board; narrow by `boardId`. */
 export function useLabels() {
   return useQuery({ queryKey: labelsKey, queryFn: commands.listLabels });
 }
@@ -271,7 +271,8 @@ export function useLabels() {
 export function useCreateLabel() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, color }: { name: string; color: Color }) => commands.createLabel(name, color),
+    mutationFn: ({ boardId, name, color }: { boardId: string; name: string; color: Color }) =>
+      commands.createLabel(boardId, name, color),
     onSuccess: () => qc.invalidateQueries({ queryKey: labelsKey }),
   });
 }

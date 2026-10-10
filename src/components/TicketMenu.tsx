@@ -163,8 +163,11 @@ function Option({
 
 /** Mounted only while the menu is open, so rows don't each subscribe to labels. */
 function LabelOptions({ ticket }: { ticket: Ticket }) {
-  const labels = useLabels().data ?? [];
+  const labels = (useLabels().data ?? []).filter((l) => l.boardId === ticket.boardId);
   const setLabel = useSetTicketLabel();
+  if (!ticket.boardId) {
+    return <div className="px-2 py-1.5 text-fg-tertiary">Labels belong to boards. Move this ticket first.</div>;
+  }
   if (labels.length === 0) {
     return <div className="px-2 py-1.5 text-fg-tertiary">No labels yet. Press L to create one.</div>;
   }

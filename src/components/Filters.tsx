@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import type { Label, Priority, Project } from "../bindings";
-import { useLabels } from "../lib/queries";
 import { NO_PROJECT, PRIORITIES, SWATCH_BG, filterCount, type Filters } from "../lib/tickets";
 import { CheckIcon, PriorityIcon, ProjectIcon } from "./icons";
 import { Dialog, Kbd } from "./ui";
@@ -60,18 +59,21 @@ export function FilterMenu({
   onOpenChange,
   filters,
   onChange,
+  labels,
   projects,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   filters: Filters;
   onChange: (filters: Filters) => void;
+  /** Labels the view's tickets can have. */
+  labels: Label[];
   /** Projects to offer, or `null` where filtering by project doesn't apply. */
   projects: Project[] | null;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="Filter" width="w-[360px]">
-      {open && <Body filters={filters} onChange={onChange} projects={projects} />}
+      {open && <Body filters={filters} onChange={onChange} labels={labels} projects={projects} />}
     </Dialog>
   );
 }
@@ -79,13 +81,14 @@ export function FilterMenu({
 function Body({
   filters,
   onChange,
+  labels,
   projects,
 }: {
   filters: Filters;
   onChange: (filters: Filters) => void;
+  labels: Label[];
   projects: Project[] | null;
 }) {
-  const labels = useLabels().data ?? [];
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const list = useRef<HTMLDivElement>(null);
@@ -167,14 +170,15 @@ export function FilterBar({
   filters,
   onChange,
   onEdit,
+  labels,
   projects,
 }: {
   filters: Filters;
   onChange: (filters: Filters) => void;
   onEdit: () => void;
+  labels: Label[];
   projects: Project[];
 }) {
-  const labels = useLabels().data ?? [];
   if (filterCount(filters) === 0) return null;
 
   const chips = options(filters, labels, projects).filter((o) => o.active);

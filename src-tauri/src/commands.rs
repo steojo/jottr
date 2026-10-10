@@ -129,8 +129,8 @@ pub async fn list_labels(db: State<'_, Db>) -> CmdResult<Vec<Label>> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn create_label(db: State<'_, Db>, name: String, color: Color) -> CmdResult<Label> {
-    store::create_label(&*db.0.lock().map_err(err)?, name, color)
+pub async fn create_label(db: State<'_, Db>, board_id: String, name: String, color: Color) -> CmdResult<Label> {
+    store::create_label(&*db.0.lock().map_err(err)?, board_id, name, color)
 }
 
 #[tauri::command]

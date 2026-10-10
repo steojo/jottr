@@ -203,15 +203,17 @@ pub struct TicketPatch {
 #[serde(rename_all = "camelCase")]
 pub struct Label {
     pub id: String,
+    /// Labels belong to one board, and only its tickets can use them.
+    pub board_id: String,
     pub name: String,
     pub color: Color,
 }
 
 impl Label {
-    pub const COLUMNS: &'static str = "id, name, color";
+    pub const COLUMNS: &'static str = "id, board_id, name, color";
 
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
-        Ok(Self { id: row.get(0)?, name: row.get(1)?, color: row.get(2)? })
+        Ok(Self { id: row.get(0)?, board_id: row.get(1)?, name: row.get(2)?, color: row.get(3)? })
     }
 }
 

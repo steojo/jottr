@@ -12,7 +12,7 @@ export const commands = {
 	/**  The project's tickets stay on the board, without a project. */
 	deleteProject: (id: string) => __TAURI_INVOKE<null>("delete_project", { id }),
 	listLabels: () => __TAURI_INVOKE<Label[]>("list_labels"),
-	createLabel: (name: string, color: Color) => __TAURI_INVOKE<Label>("create_label", { name, color }),
+	createLabel: (boardId: string, name: string, color: Color) => __TAURI_INVOKE<Label>("create_label", { boardId, name, color }),
 	updateLabel: (id: string, patch: LabelPatch) => __TAURI_INVOKE<Label>("update_label", { id, patch }),
 	/**  Also removes it from every ticket. */
 	deleteLabel: (id: string) => __TAURI_INVOKE<null>("delete_label", { id }),
@@ -99,6 +99,8 @@ export type Color = "gray" | "red" | "orange" | "yellow" | "green" | "blue" | "p
 
 export type Label = {
 	id: string,
+	/**  Labels belong to one board, and only its tickets can use them. */
+	boardId: string,
 	name: string,
 	color: Color,
 };

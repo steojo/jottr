@@ -56,7 +56,8 @@ export function LabelPicker({
 }
 
 function LabelPickerBody({ ticket }: { ticket: Ticket }) {
-  const labels = useLabels().data ?? [];
+  const boardId = ticket.boardId;
+  const labels = (useLabels().data ?? []).filter((l) => l.boardId === boardId);
   const setLabel = useSetTicketLabel();
   const createLabel = useCreateLabel();
   const [query, setQuery] = useState("");
@@ -76,8 +77,9 @@ function LabelPickerBody({ ticket }: { ticket: Ticket }) {
   }
 
   async function create(name: string) {
+    if (!boardId) return;
     try {
-      const label = await createLabel.mutateAsync({ name, color: nextLabelColor(labels) });
+      const label = await createLabel.mutateAsync({ boardId, name, color: nextLabelColor(labels) });
       setLabel.mutate({ ticket, labelId: label.id, applied: true });
       setQuery("");
       setError(null);
@@ -99,6 +101,10 @@ function LabelPickerBody({ ticket }: { ticket: Ticket }) {
     else if (e.key === "Enter") activate(rows[highlighted]);
     else return;
     e.preventDefault();
+  }
+
+  if (!boardId) {
+    return <p className="px-4 py-3 text-fg-tertiary">Labels belong to boards. Move this ticket to a board first · M</p>;
   }
 
   return (
