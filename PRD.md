@@ -359,7 +359,7 @@ Backlog, Ready and Canceled use the neutral text greys. Done uses the accent.
 ### 6.6 Board view
 - Columns are the statuses, in workflow order. They stretch between 240px and 320px to fill the window, and the board scrolls sideways if needed.
 - Each board remembers whether it shows the list or the board (`⌘B`, or the List/Board toggle in the header). New boards open as a board. The Inbox is always a list.
-- Tickets move by drag and drop **or** by keyboard. Dragging works within a column (reorder) and across columns (status change). On the keyboard, `[` / `]` move the selected ticket to the previous/next status, and `J`/`K` and `←`/`→` move the selection.
+- Tickets move by drag and drop **or** by keyboard. Dragging works within a column (reorder) and across columns (status change). The column under the pointer is the target, including empty columns. Done is ordered by completion, so a card dropped there lands at the top and Done can't be reordered. On the keyboard, `[` / `]` move the selected ticket to the previous/next status, and `J`/`K` and `←`/`→` move the selection.
 - **Column header:** status icon, name, ticket count, a **"+"** that creates a ticket in that status, and a collapse button.
 - **Collapsible columns:** any column can collapse to a thin vertical strip showing its icon, its name (written sideways) and its count. Click the strip to expand it. Collapsed columns are remembered per board. Canceled starts collapsed.
 - **Done column grouped by day:** Done tickets are grouped by the day they were completed, newest first ("Today", "Yesterday", "Sun, 27 Sept"), each with a count.

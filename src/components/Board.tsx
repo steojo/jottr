@@ -1,16 +1,26 @@
 import {
-  closestCorners,
+  closestCenter,
   DndContext,
   DragOverlay,
+  MeasuringStrategy,
   PointerSensor,
+  pointerWithin,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type UniqueIdentifier,
 } from "@dnd-kit/core";
-import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  type SortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
@@ -20,6 +30,7 @@ import { useShortcuts } from "../lib/shortcuts";
 import { usePersistentState } from "../lib/storage";
 import {
   adjacentStatus,
+  BOARD_ORDER,
   boardColumns,
   dropPosition,
   formatDue,
@@ -39,6 +50,14 @@ import { TicketPickers, type PickerKind } from "./TicketPickers";
 import { IconButton } from "./ui";
 
 type Columns = Record<Status, string[]>;
+
+const isColumn = (id: UniqueIdentifier) => BOARD_ORDER.includes(id as Status);
+
+// Cards change columns mid-drag, so drop targets are re-measured after every change.
+const measuring = { droppable: { strategy: MeasuringStrategy.Always } };
+
+// Done is ordered by completion, so its cards never shift to make room.
+const noSorting: SortingStrategy = () => null;
 
 /** PRD §6.6: status columns, drag and drop or keyboard, collapsible columns, Done grouped by day. */
 export function Board({
@@ -75,6 +94,7 @@ export function Board({
   const [dragColumns, setDragColumns] = useState<Columns | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const cards = useRef(new Map<string, HTMLElement>());
+  const lastOver = useRef<UniqueIdentifier | null>(null);
   const update = useUpdateTicket();
   const reposition = useRepositionTicket();
   const labels = useLabels().data ?? [];
@@ -88,6 +108,11 @@ export function Board({
 
   // Drags start after 5px of movement, so a plain click still opens the ticket.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // After a drop, the dropped layout stays until the saved order reaches the cache, so the card doesn't flash back.
+  useEffect(() => {
+    if (!dragId) setDragColumns(null);
+  }, [tickets]);
 
   useEffect(() => {
     if (keyboard && activeId) cards.current.get(activeId)?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -141,46 +166,70 @@ export function Board({
   const columnOf = (id: string, cols: Columns) =>
     (Object.keys(cols) as Status[]).find((s) => s === id || cols[s].includes(id));
 
+  /**
+   * Targets follow the pointer: the column under it, then the card under it or the nearest card in
+   * that column. Between columns the last target holds. (Corner distance let tall, empty columns lose
+   * to the cards beside them.)
+   */
+  const collisionDetection: CollisionDetection = (args) => {
+    const hits = pointerWithin(args);
+    const column = hits.find((hit) => isColumn(hit.id));
+    if (column) {
+      const inColumn = (id: UniqueIdentifier) => ids[column.id as Status].includes(String(id));
+      const card =
+        hits.find((hit) => inColumn(hit.id)) ??
+        closestCenter({ ...args, droppableContainers: args.droppableContainers.filter((c) => inColumn(c.id)) })[0];
+      lastOver.current = (card ?? column).id;
+    }
+    return lastOver.current === null ? [] : [{ id: lastOver.current }];
+  };
+
   function onDragStart({ active: dragged }: DragStartEvent) {
+    lastOver.current = null;
     setDragId(String(dragged.id));
     setDragColumns(ids);
   }
 
   // Moving into another column happens live, so the drop target shows where the card will land.
   function onDragOver({ active: dragged, over }: DragOverEvent) {
-    if (!over || !dragColumns) return;
-    const from = columnOf(String(dragged.id), dragColumns);
-    const to = columnOf(String(over.id), dragColumns);
-    if (!from || !to || from === to) return;
+    if (!over) return;
+    const id = String(dragged.id);
+    const overId = String(over.id);
     setDragColumns((cols) => {
-      if (!cols) return cols;
+      const from = cols && columnOf(id, cols);
+      const to = cols && columnOf(overId, cols);
+      if (!cols || !from || !to || from === to) return cols;
       const target = cols[to];
-      const overIndex = target.indexOf(String(over.id));
-      const index = overIndex === -1 ? target.length : overIndex;
+      // Done is ordered by completion, newest first, so that's where the card will land.
+      const index = to === "done" ? 0 : target.includes(overId) ? target.indexOf(overId) : target.length;
       return {
         ...cols,
-        [from]: cols[from].filter((id) => id !== dragged.id),
-        [to]: [...target.slice(0, index), String(dragged.id), ...target.slice(index)],
+        [from]: cols[from].filter((x) => x !== id),
+        [to]: [...target.slice(0, index), id, ...target.slice(index)],
       };
     });
   }
 
   function onDragEnd({ active: dragged, over }: DragEndEvent) {
     const cols = dragColumns;
-    setDragColumns(null);
     setDragId(null);
     const ticket = byId.get(String(dragged.id));
-    if (!over || !cols || !ticket) return;
+    if (!over || !cols || !ticket) return setDragColumns(null);
 
     const status = columnOf(String(dragged.id), cols)!;
     let list = cols[status];
     const from = list.indexOf(ticket.id);
     const to = list.indexOf(String(over.id));
-    if (to !== -1 && from !== to) list = arrayMove(list, from, to);
+    if (status !== "done" && to !== -1 && from !== to) list = arrayMove(list, from, to);
 
     const position = dropPosition(list, ticket.id, status, byId);
-    if (status !== ticket.status || position !== ticket.position) {
+    const moved = status === "done" ? ticket.status !== "done" : status !== ticket.status || position !== ticket.position;
+    if (moved) {
+      // Keeps the dropped layout until the cache updates (see the effect above).
+      setDragColumns(list === cols[status] ? cols : { ...cols, [status]: list });
       reposition.mutate({ ticket, status, position });
+    } else {
+      setDragColumns(null);
     }
     select(ticket);
   }
@@ -192,7 +241,8 @@ export function Board({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetection}
+      measuring={measuring}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
@@ -295,12 +345,12 @@ function Column({
   onCollapse: () => void;
   renderCard: (ticket: Ticket) => ReactNode;
 }) {
-  // The whole column body accepts drops, so empty columns work too.
+  // The whole column accepts drops, header included, so empty columns work too.
   const { setNodeRef } = useDroppable({ id: status });
   const label = statusLabel(status);
 
   return (
-    <section className="flex max-w-[320px] min-w-[240px] flex-1 flex-col rounded-xl bg-surface-elevated/40">
+    <section ref={setNodeRef} className="flex max-w-[320px] min-w-[240px] flex-1 flex-col rounded-xl bg-surface-elevated/40">
       <div className="group flex h-10 shrink-0 items-center gap-2 px-3 font-medium">
         <StatusIcon status={status} />
         {label}
@@ -318,8 +368,11 @@ function Column({
           </IconButton>
         </span>
       </div>
-      <SortableContext items={tickets.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div ref={setNodeRef} className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
+      <SortableContext
+        items={tickets.map((t) => t.id)}
+        strategy={status === "done" ? noSorting : verticalListSortingStrategy}
+      >
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
           {groupByDay
             ? groupByCompletionDay(tickets).map((day) => (
                 <div key={day.label} className="flex flex-col gap-2">
