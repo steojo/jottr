@@ -6,6 +6,7 @@ mod store;
 use std::sync::Mutex;
 
 use tauri::Manager;
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 use tauri_specta::{collect_commands, Builder, ErrorHandlingMode};
 
 fn specta_builder() -> Builder<tauri::Wry> {
@@ -58,6 +59,12 @@ fn export_bindings(builder: &Builder<tauri::Wry>) {
         .expect("failed to export TypeScript bindings");
 }
 
+/// What the window remembers between launches. Visibility is left out so hidden windows stay hidden.
+const WINDOW_STATE: StateFlags = StateFlags::SIZE
+    .union(StateFlags::POSITION)
+    .union(StateFlags::MAXIMIZED)
+    .union(StateFlags::FULLSCREEN);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = specta_builder();
@@ -66,6 +73,14 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_window_state::Builder::default().with_state_flags(WINDOW_STATE).build())
+        // The plugin only saves on quit. Saving when Jottr loses focus too means a crash, or
+        // `tauri dev` restarting the app, still reopens the window where you left it.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Focused(false) = event {
+                let _ = window.app_handle().save_window_state(WINDOW_STATE);
+            }
+        })
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
             let dir = app.path().app_data_dir()?;

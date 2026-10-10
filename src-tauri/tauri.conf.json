@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "Jottr",
-        "width": 1200,
-        "height": 780,
+        "width": 1400,
+        "height": 880,
         "minWidth": 800,
         "minHeight": 500,
         "center": true,

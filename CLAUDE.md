@@ -75,7 +75,7 @@ Rust owns all data; the UI never touches the database directly.
 - **Keyboard (`src/lib/shortcuts.ts`):** one global `keydown` listener with a registry of `useShortcuts` maps. The most recently mounted map wins, so views override global keys. It handles the `g x` prefix sequences.
   - Shortcuts are ignored while typing or while any `[role=dialog]` or `[role=menu]` is open. Dialogs and menus handle their own keys; see `Picker.tsx` for the numbered-option pattern.
   - Buttons call `preventDefault` on `mousedown`, and dialogs skip focus return, so focus stays on the body and Enter/Space can't re-trigger a button.
-- **Window:** set in `src-tauri/tauri.conf.json`. It uses an overlay title bar with a hidden title and custom traffic light position. The top 52px strips of the sidebar and main area are `data-tauri-drag-region` elements, which both drag the window and clear the traffic lights. Dragging relies on `core:window:allow-start-dragging`.
+- **Window:** set in `src-tauri/tauri.conf.json`. It uses an overlay title bar with a hidden title and custom traffic light position. The top 52px strips of the sidebar and main area are `data-tauri-drag-region` elements, which both drag the window and clear the traffic lights. Dragging relies on `core:window:allow-start-dragging`. `tauri-plugin-window-state` restores size and position at launch; `lib.rs` also saves on focus loss, since the plugin only saves on a clean quit.
 - **Permissions:** any new Tauri plugin or window/API call needs its permission added to `src-tauri/capabilities/default.json`.
 
 ## Styling & design rules
