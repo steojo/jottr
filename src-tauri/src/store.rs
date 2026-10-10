@@ -11,7 +11,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::db::{new_id, now};
 use crate::models::{
     Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Priority, Project, Settings,
-    Status, Ticket, TicketPatch,
+    Status, Ticket, TicketDraft, TicketPatch,
 };
 
 pub type CmdResult<T> = Result<T, String>;
@@ -29,7 +29,7 @@ fn get_board(conn: &Connection, id: &str) -> CmdResult<Board> {
     .map_err(err)
 }
 
-fn get_ticket(conn: &Connection, id: &str) -> CmdResult<Ticket> {
+pub fn get_ticket(conn: &Connection, id: &str) -> CmdResult<Ticket> {
     conn.query_row(
         &format!(
             "SELECT {} FROM tickets t LEFT JOIN boards b ON b.id = t.board_id WHERE t.id = ?1",
@@ -150,29 +150,71 @@ pub fn list_tickets(conn: &Connection, board_id: Option<String>) -> CmdResult<Ve
 
 /// New tickets go to the bottom of their status group.
 pub fn create_ticket(conn: &mut Connection, input: NewTicket) -> CmdResult<Ticket> {
+    let tx = conn.transaction().map_err(err)?;
+    check_project(&tx, input.board_id.as_deref(), input.project_id.as_deref())?;
+    let id = insert_ticket(&tx, &input, "")?;
+    tx.commit().map_err(err)?;
+    get_ticket(conn, &id)
+}
+
+/// Tickets made from lines of notes, added to the bottom of `status` in the order given.
+pub fn create_tickets(
+    conn: &mut Connection,
+    board_id: String,
+    project_id: Option<String>,
+    status: Status,
+    drafts: Vec<TicketDraft>,
+) -> CmdResult<Vec<Ticket>> {
+    let tx = conn.transaction().map_err(err)?;
+    check_project(&tx, Some(&board_id), project_id.as_deref())?;
+    let mut ids = Vec::with_capacity(drafts.len());
+    for draft in drafts {
+        let input = NewTicket {
+            board_id: Some(board_id.clone()),
+            project_id: project_id.clone(),
+            title: draft.title,
+            status,
+            priority: Priority::None,
+        };
+        let id = insert_ticket(&tx, &input, draft.description.trim())?;
+        let items = draft.checklist.iter().filter(|item| !item.text.trim().is_empty());
+        for (i, item) in items.enumerate() {
+            tx.execute(
+                "INSERT INTO checklist_items (id, ticket_id, text, done, position, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![new_id(), id, item.text.trim(), item.done, i as f64 + 1.0, now()],
+            )
+            .map_err(err)?;
+        }
+        ids.push(id);
+    }
+    tx.commit().map_err(err)?;
+    ids.iter().map(|id| get_ticket(conn, id)).collect()
+}
+
+/// Inserts a ticket at the bottom of its status group and returns its ID. The caller checks the project.
+fn insert_ticket(conn: &Connection, input: &NewTicket, description: &str) -> CmdResult<String> {
     let title = input.title.trim();
     if title.is_empty() {
         return Err("Ticket title can't be empty".into());
     }
-
-    let tx = conn.transaction().map_err(err)?;
     let board_id = input.board_id.as_deref();
-    check_project(&tx, board_id, input.project_id.as_deref())?;
-    let number = board_id.map(|id| next_number(&tx, id)).transpose()?;
-    let position = bottom_position(&tx, board_id, input.status)?;
+    let number = board_id.map(|id| next_number(conn, id)).transpose()?;
+    let position = bottom_position(conn, board_id, input.status)?;
     let ts = now();
     let completed_at = (input.status == Status::Done).then_some(ts);
     let id = new_id();
-    tx.execute(
-        "INSERT INTO tickets (id, board_id, project_id, number, title, status, priority, position,
+    conn.execute(
+        "INSERT INTO tickets (id, board_id, project_id, number, title, description, status, priority, position,
                               created_at, updated_at, completed_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10, ?11)",
         params![
             id,
             board_id,
             input.project_id,
             number,
             title,
+            description,
             input.status,
             input.priority,
             position,
@@ -181,8 +223,39 @@ pub fn create_ticket(conn: &mut Connection, input: NewTicket) -> CmdResult<Ticke
         ],
     )
     .map_err(err)?;
-    tx.commit().map_err(err)?;
-    get_ticket(conn, &id)
+    Ok(id)
+}
+
+/// Notes on a project, or on the board itself when `project_id` is `None`.
+pub fn get_notes(conn: &Connection, board_id: String, project_id: Option<String>) -> CmdResult<String> {
+    let notes = match &project_id {
+        Some(id) => conn.query_row(
+            "SELECT notes FROM projects WHERE id = ?1 AND board_id = ?2",
+            params![id, board_id],
+            |row| row.get(0),
+        ),
+        None => conn.query_row("SELECT notes FROM boards WHERE id = ?1", [&board_id], |row| row.get(0)),
+    };
+    notes.optional().map_err(err)?.ok_or_else(|| notes_missing(&project_id))
+}
+
+pub fn set_notes(conn: &Connection, board_id: String, project_id: Option<String>, notes: String) -> CmdResult<()> {
+    let changed = match &project_id {
+        Some(id) => conn.execute(
+            "UPDATE projects SET notes = ?3 WHERE id = ?1 AND board_id = ?2",
+            params![id, board_id, notes],
+        ),
+        None => conn.execute("UPDATE boards SET notes = ?2 WHERE id = ?1", params![board_id, notes]),
+    }
+    .map_err(err)?;
+    if changed == 0 {
+        return Err(notes_missing(&project_id));
+    }
+    Ok(())
+}
+
+fn notes_missing(project_id: &Option<String>) -> String {
+    if project_id.is_some() { "Project not found" } else { "Board not found" }.into()
 }
 
 pub fn update_ticket(conn: &mut Connection, id: String, patch: TicketPatch) -> CmdResult<Ticket> {
@@ -885,6 +958,7 @@ pub fn delete_checklist_item(conn: &Connection, id: String) -> CmdResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::ChecklistDraft;
 
     fn db() -> Connection {
         crate::db::open_in_memory().unwrap()
@@ -1381,5 +1455,64 @@ mod tests {
         let rows: i64 = conn.query_row("SELECT COUNT(*) FROM attachments", [], |r| r.get(0)).unwrap();
         assert_eq!(rows, 0);
         fs::remove_dir_all(&source_dir).unwrap();
+    }
+    #[test]
+    fn notes_belong_to_a_board_or_project() {
+        let conn = db();
+        let eng = board(&conn, "ENG");
+        let ops = board(&conn, "OPS");
+        let p = create_project(&conn, eng.id.clone(), "Open Source".into()).unwrap();
+        assert_eq!(get_notes(&conn, eng.id.clone(), None).unwrap(), "", "notes start empty");
+
+        set_notes(&conn, eng.id.clone(), None, "- board idea".into()).unwrap();
+        set_notes(&conn, eng.id.clone(), Some(p.id.clone()), "- project idea".into()).unwrap();
+        assert_eq!(get_notes(&conn, eng.id.clone(), None).unwrap(), "- board idea");
+        assert_eq!(get_notes(&conn, eng.id.clone(), Some(p.id.clone())).unwrap(), "- project idea");
+
+        assert!(get_notes(&conn, ops.id.clone(), Some(p.id.clone())).is_err(), "project from another board");
+        assert!(set_notes(&conn, ops.id.clone(), Some(p.id.clone()), "x".into()).is_err());
+        assert!(set_notes(&conn, "missing".into(), None, "x".into()).is_err());
+    }
+
+    #[test]
+    fn creates_tickets_from_notes_in_order() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let ops = board(&conn, "OPS");
+        let p = create_project(&conn, eng.id.clone(), "Open Source".into()).unwrap();
+        let existing = ticket(&mut conn, Some(&eng.id), Status::Backlog);
+        let draft = |title: &str, description: &str, checklist: Vec<ChecklistDraft>| TicketDraft {
+            title: title.into(),
+            description: description.into(),
+            checklist,
+        };
+        let drafts = vec![
+            draft(
+                "Add a back button",
+                "- Remember scroll position\n",
+                vec![
+                    ChecklistDraft { text: "Works with ⌘[".into(), done: false },
+                    ChecklistDraft { text: " ".into(), done: false },
+                    ChecklistDraft { text: "Design it".into(), done: true },
+                ],
+            ),
+            draft("Rearrange projects", "", vec![]),
+        ];
+
+        let created = create_tickets(&mut conn, eng.id.clone(), Some(p.id.clone()), Status::Backlog, drafts).unwrap();
+        let numbers: Vec<_> = created.iter().map(|t| t.number).collect();
+        assert_eq!(numbers, [Some(2), Some(3)]);
+        assert!(created.iter().all(|t| t.project_id.as_deref() == Some(&p.id)));
+        assert_eq!(created[0].description, "- Remember scroll position");
+        assert!(existing.position < created[0].position && created[0].position < created[1].position, "added at the bottom, in order");
+        assert_eq!((created[0].checklist_done, created[0].checklist_total), (1, 2), "blank items are skipped");
+        let items = list_checklist(&conn, created[0].id.clone()).unwrap();
+        assert_eq!(items[0].text, "Works with ⌘[");
+
+        let bad = vec![draft("A", "", vec![]), draft(" ", "", vec![])];
+        assert!(create_tickets(&mut conn, eng.id.clone(), None, Status::Backlog, bad).is_err());
+        assert_eq!(list_tickets(&conn, Some(eng.id.clone())).unwrap().len(), 3, "a bad draft creates nothing");
+        let elsewhere = vec![draft("A", "", vec![])];
+        assert!(create_tickets(&mut conn, ops.id.clone(), Some(p.id.clone()), Status::Backlog, elsewhere).is_err());
     }
 }

@@ -9,6 +9,8 @@ import { CreateTicketDialog } from "./components/CreateTicketDialog";
 import { FilterBar, FilterMenu } from "./components/Filters";
 import { ConfirmDialog, NameDialog } from "./components/FormDialogs";
 import { ChevronUpDownIcon, PlusIcon, ProjectIcon } from "./components/icons";
+import { Notes } from "./components/Notes";
+import type { NotesHandle } from "./components/NotesEditor";
 import { Picker } from "./components/Picker";
 import { SettingsPage } from "./components/Settings";
 import { ShortcutSheet } from "./components/ShortcutSheet";
@@ -16,6 +18,7 @@ import { Sidebar, type View } from "./components/Sidebar";
 import { TicketList } from "./components/TicketList";
 import { TicketPage } from "./components/TicketPage";
 import {
+  fetchTicket,
   useAddAttachments,
   useArchive,
   useAutoArchive,
@@ -97,9 +100,17 @@ function App() {
     `jottr.layout.${view.kind === "board" ? view.boardId : view.kind}`,
     "board",
   );
-  const showBoard = view.kind === "board" && layout === "board";
+  // Each board remembers whether its notes are open; its projects share the setting.
+  const [notesOpen, setNotesOpen] = usePersistentState(
+    `jottr.notes.${view.kind === "board" ? view.boardId : view.kind}`,
+    false,
+  );
+  const showNotes = view.kind === "board" && notesOpen;
+  const showBoard = view.kind === "board" && layout === "board" && !showNotes;
+  const notesHandle = useRef<NotesHandle | null>(null);
   // New tickets start in Backlog, or in Ready on a board that hides its Backlog column.
-  const newStatus: Status = showBoard && settings?.showBacklog === false ? "ready" : "backlog";
+  const newStatus: Status =
+    view.kind === "board" && layout === "board" && settings?.showBacklog === false ? "ready" : "backlog";
 
   // What's on screen: the view's tickets, narrowed to a project (a project is a filter
   // over its board), then by the active filters.
@@ -148,8 +159,8 @@ function App() {
   const lastOpen = useRef<Ticket | null>(null);
   const openTicket = order.find((t) => t.id === openId) ?? (lastOpen.current?.id === openId ? lastOpen.current : null);
   lastOpen.current = openTicket;
-  // What ticket actions (S, P, ⌘⇧C, …) apply to.
-  const target = openTicket ?? activeTicket;
+  // What ticket actions (S, P, ⌘⇧C, …) apply to. The list's selection is hidden behind the notes.
+  const target = openTicket ?? (showNotes ? undefined : activeTicket);
 
   // A ticket restored while open (with Restore, or by changing its status) goes back to
   // its board, still open. Waits for the Archive to load so a stale list can't trigger it.
@@ -191,6 +202,13 @@ function App() {
     // Show it straight away, before its board's tickets have loaded.
     lastOpen.current = ticket;
     open(ticket);
+  }
+
+  /** Opens a ticket linked from notes: in place if it's in this view, otherwise wherever it is now. */
+  function openLinked(id: string) {
+    const ticket = order.find((t) => t.id === id);
+    if (ticket) return open(ticket);
+    fetchTicket(id).then(openAnywhere, () => setToast("That ticket has been deleted"));
   }
 
   function step(delta: 1 | -1) {
@@ -262,7 +280,9 @@ function App() {
     );
   }
 
-  const toggleLayout = () => view.kind === "board" && setLayout(showBoard ? "list" : "board");
+  // From the notes, ⌘B goes back to the board's tickets as they were.
+  const toggleLayout = () =>
+    view.kind === "board" && (showNotes ? setNotesOpen(false) : setLayout(showBoard ? "list" : "board"));
   const toggleSettings = () => navigate(view.kind === "settings" ? settingsReturn.current : { kind: "settings" });
 
   useShortcuts({
@@ -270,7 +290,13 @@ function App() {
     "mod+k": () => setCommandMenu("all"),
     "/": () => setCommandMenu("search"),
     "?": () => setShowShortcuts(true),
-    f: () => !openTicket && view.kind !== "settings" && setFiltering(true),
+    f: () => !openTicket && view.kind !== "settings" && !showNotes && setFiltering(true),
+    n: () => {
+      if (view.kind !== "board") return;
+      // From a ticket, N goes to the notes; otherwise it opens or closes them.
+      setNotesOpen(openTicket ? true : !notesOpen);
+      setOpenId(null);
+    },
     a: () => target && restore(target),
     u: () => target && void pickFiles(target),
     "mod+shift+c": () => target && copyId(target),
@@ -357,10 +383,27 @@ function App() {
       }),
     ),
   );
-  if (!openTicket && view.kind !== "settings") {
+  if (!openTicket && view.kind !== "settings" && !showNotes) {
     commands.push({ id: "filter", label: "Filter…", group: "View", shortcut: "F", run: () => setFiltering(true) });
   }
+  if (showNotes && !openTicket) {
+    commands.push({
+      id: "make-tickets",
+      label: "Make tickets from the selected lines",
+      group: "Notes",
+      shortcut: "⌘ ↵",
+      run: () => notesHandle.current?.makeTickets(),
+    });
+  }
   if (view.kind === "board") {
+    commands.push({
+      id: "notes",
+      label: showNotes && !openTicket ? "Close notes" : `Open notes for ${project?.name ?? board?.name ?? "this board"}`,
+      group: "View",
+      shortcut: "N",
+      keywords: "scratchpad brain dump ideas",
+      run: () => runShortcut("n"),
+    });
     commands.push({
       id: "layout",
       label: showBoard ? "Switch to list view" : "Switch to board view",
@@ -474,34 +517,51 @@ function App() {
               <span className="pointer-events-none flex-1" />
               {view.kind !== "settings" && (
                 <>
-                  <button
-                    type="button"
-                    title="Filter · F"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setFiltering(true)}
-                    className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium ${
-                      activeFilters > 0
-                        ? "border-line-strong text-fg"
-                        : "border-line text-fg-tertiary hover:text-fg"
-                    }`}
-                  >
-                    Filter
-                    {activeFilters > 0 && <span className="font-mono text-[11px] text-fg-secondary">{activeFilters}</span>}
-                  </button>
+                  {showNotes ? (
+                    <button
+                      type="button"
+                      title="Make tickets from the selected lines · ⌘↵"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => notesHandle.current?.makeTickets()}
+                      className="flex h-7 items-center rounded-md border border-line px-2.5 text-[12px] font-medium text-fg-tertiary hover:text-fg"
+                    >
+                      Make tickets
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      title="Filter · F"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setFiltering(true)}
+                      className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-medium ${
+                        activeFilters > 0
+                          ? "border-line-strong text-fg"
+                          : "border-line text-fg-tertiary hover:text-fg"
+                      }`}
+                    >
+                      Filter
+                      {activeFilters > 0 && <span className="font-mono text-[11px] text-fg-secondary">{activeFilters}</span>}
+                    </button>
+                  )}
                   {view.kind === "board" && (
                     <div className="flex rounded-md border border-line p-px">
-                      {(["list", "board"] as const).map((option) => (
+                      {(["list", "board", "notes"] as const).map((option) => (
                         <button
                           key={option}
                           type="button"
-                          title={`${option === "list" ? "List" : "Board"} view · ⌘B`}
+                          title={option === "notes" ? "Notes · N" : `${option === "list" ? "List" : "Board"} view · ⌘B`}
                           onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => setLayout(option)}
+                          onClick={() => {
+                            if (option !== "notes") setLayout(option);
+                            setNotesOpen(option === "notes");
+                          }}
                           className={`h-6 rounded px-2.5 text-[12px] font-medium ${
-                            layout === option ? "bg-surface-hover text-fg" : "text-fg-tertiary hover:text-fg"
+                            (showNotes ? "notes" : layout) === option
+                              ? "bg-surface-hover text-fg"
+                              : "text-fg-tertiary hover:text-fg"
                           }`}
                         >
-                          {option === "list" ? "List" : "Board"}
+                          {option === "list" ? "List" : option === "board" ? "Board" : "Notes"}
                         </button>
                       ))}
                     </div>
@@ -521,7 +581,7 @@ function App() {
           )}
         </header>
 
-        {!openTicket && view.kind !== "settings" && (
+        {!openTicket && view.kind !== "settings" && !showNotes && (
           <FilterBar
             filters={filters}
             onChange={setFilters}
@@ -545,6 +605,16 @@ function App() {
             onRestore={restore}
             onAttach={attach}
             onPickFiles={(ticket) => void pickFiles(ticket)}
+          />
+        ) : showNotes && board ? (
+          <Notes
+            key={`${board.id}:${project?.id ?? ""}`}
+            board={board}
+            project={project}
+            status={newStatus}
+            handle={notesHandle}
+            onOpenTicket={openLinked}
+            onToast={setToast}
           />
         ) : showBoard && board ? (
           <Board

@@ -13,6 +13,7 @@ import {
   type Settings,
   type Status,
   type Ticket,
+  type TicketDraft,
   type TicketPatch,
 } from "../bindings";
 import { pastedName, toBase64 } from "./attachments";
@@ -59,6 +60,39 @@ export function useCreateTicket() {
     onSuccess: (ticket) =>
       qc.setQueryData<Ticket[]>(ticketsKey(ticket.boardId), (list) => (list ? [...list, ticket] : list)),
   });
+}
+
+/** One ticket, wherever it is now, e.g. one linked from notes. */
+export const fetchTicket = (id: string) => commands.getTicket(id);
+
+/** Tickets made from lines of notes. */
+export function useCreateTickets() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { boardId: string; projectId: string | null; status: Status; drafts: TicketDraft[] }) =>
+      commands.createTickets(input.boardId, input.projectId, input.status, input.drafts),
+    onSuccess: (tickets, { boardId }) =>
+      qc.setQueryData<Ticket[]>(ticketsKey(boardId), (list) => (list ? [...list, ...tickets] : list)),
+  });
+}
+
+const notesKey = (boardId: string, projectId: string | null) => ["notes", boardId, projectId ?? "board"] as const;
+
+/** Notes on a project, or on the board itself when `projectId` is `null`. */
+export function useNotes(boardId: string, projectId: string | null) {
+  return useQuery({ queryKey: notesKey(boardId, projectId), queryFn: () => commands.getNotes(boardId, projectId) });
+}
+
+/**
+ * Saves notes outside the mutation cache: they don't change any tickets, so My Focus and
+ * search needn't refresh after every pause in typing.
+ */
+export function useSaveNotes(boardId: string, projectId: string | null) {
+  const qc = useQueryClient();
+  return (notes: string) => {
+    qc.setQueryData(notesKey(boardId, projectId), notes);
+    return commands.setNotes(boardId, projectId, notes);
+  };
 }
 
 /** Applies the change to the cache immediately and rolls back if Rust rejects it. */

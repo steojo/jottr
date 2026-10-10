@@ -16,6 +16,13 @@ sqlite3 -readonly ~/Library/Application\ Support/com.steojo.jottr/jottr.db \
 
 Never write to that database; the running app owns it.
 
+Boards and projects also have markdown notes: brain dumps that haven't become tickets yet. When asked to shape them into tickets, read them the same way (use `boards.notes` for a board's own notes):
+
+```sh
+sqlite3 -readonly ~/Library/Application\ Support/com.steojo.jottr/jottr.db \
+  "SELECT p.notes FROM projects p JOIN boards b ON b.id = p.board_id WHERE b.key = 'ENG' AND p.name = 'Open Source'"
+```
+
 ## Product rules
 
 - **Lightweight over feature-rich:** Linear without the bloat. Every feature and every dependency must earn its place.
@@ -68,6 +75,10 @@ Rust owns all data; the UI never touches the database directly.
   - The Backlog and Canceled columns can be hidden in Settings (`showBacklog`, `showCanceled`). With Backlog hidden, `C` on a board creates tickets in Ready.
   - Per-board UI preferences (layout, collapsed columns) live in localStorage via `usePersistentState`, not SQLite.
 - **Ticket page:** the description editor (`DescriptionEditor.tsx`, TipTap + `@tiptap/markdown`) is lazy-loaded, since it's the heaviest dependency. Descriptions are stored as markdown. The page content is keyed by ticket ID so J/K remounts the editors, which flushes pending saves.
+- **Notes (`Notes.tsx`):** each board and project has markdown notes (`boards.notes`, `projects.notes`), shown by `N` or the header's List · Board · Notes switch. Whether notes are open is remembered per board, like the layout.
+  - `NotesEditor.tsx` is lazy-loaded and shares `useMarkdownEditor` (`src/lib/editor.ts`) with the description editor, plus task lists.
+  - ⌘↵ turns the lines the selection touches into tickets (`pickIdeas` in `src/lib/notes.ts`). Each top-level list item becomes a ticket, its indented lines the description and its checkboxes the checklist. With no list selected, the whole selection is one ticket titled by its first line. After a preview, `create_tickets` makes them in one transaction and the lines become `jottr://ticket/<id>` links that open the ticket.
+  - Saving notes skips the mutation cache, since it changes no tickets.
 - **Archive:** `tickets.archived_at` marks archived tickets; every list except search and `list_archived` skips them. `auto_archive` (driven by the one-row `settings` table) runs at launch in `lib.rs`, hourly via `useAutoArchive`, and after `update_settings`. `restore_ticket` or any status change brings a ticket back. `storeCachedTicket` in `queries.ts` adds restored or moved tickets to their board's cache and keeps archived ones out.
 - **Attachments:** files are copied to `attachments/<ticket id>/<attachment id>/<name>` in the app data dir. Store functions take that folder (the `AttachmentsDir` state). The UI shows images through the asset protocol (`convertFileSrc`, scoped in `tauri.conf.json`), opens files with macOS `open`, and picks them with `tauri-plugin-dialog`. Pasted files reach Rust as base64.
 - **Search and My Focus** span every board, so a `MutationCache` hook in `queries.ts` refetches them after any change. Search uses the `tickets_fts` FTS5 table, kept in step by triggers (migration 0004).

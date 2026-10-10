@@ -188,6 +188,22 @@ pub struct NewTicket {
     pub priority: Priority,
 }
 
+/// A ticket made from a line of notes, with whatever was indented under it.
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TicketDraft {
+    pub title: String,
+    pub description: String,
+    pub checklist: Vec<ChecklistDraft>,
+}
+
+#[derive(Debug, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ChecklistDraft {
+    pub text: String,
+    pub done: bool,
+}
+
 /// Fields left as `None` are unchanged.
 #[derive(Debug, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]

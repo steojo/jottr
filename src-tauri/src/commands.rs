@@ -5,7 +5,7 @@ use tauri::State;
 use crate::db::{AttachmentsDir, Db};
 use crate::models::{
     Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Settings, Status,
-    Ticket, TicketPatch,
+    Ticket, TicketDraft, TicketPatch,
 };
 use crate::store::{self, err, CmdResult};
 
@@ -31,8 +31,40 @@ pub async fn list_tickets(db: State<'_, Db>, board_id: Option<String>) -> CmdRes
 /// New tickets go to the bottom of their status group.
 #[tauri::command]
 #[specta::specta]
+pub async fn get_ticket(db: State<'_, Db>, id: String) -> CmdResult<Ticket> {
+    store::get_ticket(&*db.0.lock().map_err(err)?, &id)
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn create_ticket(db: State<'_, Db>, input: NewTicket) -> CmdResult<Ticket> {
     store::create_ticket(&mut *db.0.lock().map_err(err)?, input)
+}
+
+/// Tickets made from lines of notes, in order.
+#[tauri::command]
+#[specta::specta]
+pub async fn create_tickets(
+    db: State<'_, Db>,
+    board_id: String,
+    project_id: Option<String>,
+    status: Status,
+    drafts: Vec<TicketDraft>,
+) -> CmdResult<Vec<Ticket>> {
+    store::create_tickets(&mut *db.0.lock().map_err(err)?, board_id, project_id, status, drafts)
+}
+
+/// Notes on a project, or on the board itself when `project_id` is `null`.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_notes(db: State<'_, Db>, board_id: String, project_id: Option<String>) -> CmdResult<String> {
+    store::get_notes(&*db.0.lock().map_err(err)?, board_id, project_id)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_notes(db: State<'_, Db>, board_id: String, project_id: Option<String>, notes: String) -> CmdResult<()> {
+    store::set_notes(&*db.0.lock().map_err(err)?, board_id, project_id, notes)
 }
 
 #[tauri::command]

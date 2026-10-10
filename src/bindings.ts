@@ -11,6 +11,9 @@ export const commands = {
 	renameProject: (id: string, name: string) => __TAURI_INVOKE<Project>("rename_project", { id, name }),
 	/**  The project's tickets stay on the board, without a project. */
 	deleteProject: (id: string) => __TAURI_INVOKE<null>("delete_project", { id }),
+	/**  Notes on a project, or on the board itself when `project_id` is `null`. */
+	getNotes: (boardId: string, projectId: string | null) => __TAURI_INVOKE<string>("get_notes", { boardId, projectId }),
+	setNotes: (boardId: string, projectId: string | null, notes: string) => __TAURI_INVOKE<null>("set_notes", { boardId, projectId, notes }),
 	listLabels: () => __TAURI_INVOKE<Label[]>("list_labels"),
 	createLabel: (boardId: string, name: string, color: Color) => __TAURI_INVOKE<Label>("create_label", { boardId, name, color }),
 	updateLabel: (id: string, patch: LabelPatch) => __TAURI_INVOKE<Label>("update_label", { id, patch }),
@@ -25,7 +28,10 @@ export const commands = {
 	/**  My Focus: open tickets anywhere that are in progress, in review, or due by `due_by`. */
 	listFocus: (dueBy: string) => __TAURI_INVOKE<Ticket[]>("list_focus", { dueBy }),
 	/**  New tickets go to the bottom of their status group. */
+	getTicket: (id: string) => __TAURI_INVOKE<Ticket>("get_ticket", { id }),
 	createTicket: (input: NewTicket) => __TAURI_INVOKE<Ticket>("create_ticket", { input }),
+	/**  Tickets made from lines of notes, in order. */
+	createTickets: (boardId: string, projectId: string | null, status: Status, drafts: TicketDraft[]) => __TAURI_INVOKE<Ticket[]>("create_tickets", { boardId, projectId, status, drafts }),
 	updateTicket: (id: string, patch: TicketPatch) => __TAURI_INVOKE<Ticket>("update_ticket", { id, patch }),
 	/**
 	 *  Moves a ticket to a board (or the Inbox when `board_id` is `None`) and a project on it
@@ -79,6 +85,11 @@ export type Board = {
 	name: string,
 	key: string,
 	color: Color,
+};
+
+export type ChecklistDraft = {
+	text: string,
+	done: boolean,
 };
 
 export type ChecklistItem = {
@@ -170,6 +181,13 @@ export type Ticket = {
 	labelIds: string[],
 	/**  Set while the ticket is in the Archive. */
 	archivedAt: number | null,
+};
+
+/**  A ticket made from a line of notes, with whatever was indented under it. */
+export type TicketDraft = {
+	title: string,
+	description: string,
+	checklist: ChecklistDraft[],
 };
 
 /**  Fields left as `None` are unchanged. */

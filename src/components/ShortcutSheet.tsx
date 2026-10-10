@@ -47,6 +47,14 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
       ["J  K", "Next / previous ticket"],
       ["←  →", "Previous / next column"],
       ["Esc", "Clear selection"],
+      ["N", "Notes"],
+    ],
+  },
+  {
+    title: "Notes",
+    keys: [
+      ["⌘ ↵", "Make tickets from the selected lines"],
+      ["Esc", "Finish editing"],
     ],
   },
   {
