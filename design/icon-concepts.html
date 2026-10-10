@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Jottr icon concepts</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #050506;
+    color: #ededef;
+    font: 400 13px/1.4 "Inter Variable", Inter, system-ui, sans-serif;
+    padding: 32px;
+    width: 1200px;
+  }
+  h1 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .sub { color: #a0a0a8; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .card {
+    background: #121215;
+    border: 1px solid #1c1c21;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .name { font-weight: 600; margin-top: 8px; }
+  .desc { color: #a0a0a8; text-align: center; margin: 4px 0 16px; min-height: 36px; }
+  .strip {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+  }
+  .strip + .strip { margin-top: 8px; }
+  .dark { background: #2a2a2e; }
+  .light { background: #e9e9ec; }
+</style>
+</head>
+<body>
+<!-- Every icon is drawn on Apple's 1024 grid: an 824px rounded square with transparent padding. -->
+<svg width="0" height="0" style="position: absolute">
+  <defs>
+    <linearGradient id="bg-dark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#26262b"/>
+      <stop offset="1" stop-color="#0e0e11"/>
+    </linearGradient>
+    <linearGradient id="bg-light" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6f6f8"/>
+      <stop offset="1" stop-color="#d9d9de"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6f6f8"/>
+      <stop offset="1" stop-color="#dedee3"/>
+    </linearGradient>
+    <linearGradient id="cover" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2c2c32"/>
+      <stop offset="1" stop-color="#0c0c0e"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+    <clipPath id="book-clip">
+      <path d="M332 236 H668 A44 44 0 0 1 712 280 V744 A44 44 0 0 1 668 788 H332 A20 20 0 0 1 312 768 V256 A20 20 0 0 1 332 236 Z"/>
+    </clipPath>
+
+    <symbol id="base-dark" viewBox="0 0 1024 1024">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg-dark)" filter="url(#shadow)"/>
+      <rect x="102" y="102" width="820" height="820" rx="183" fill="none" stroke="#fff" stroke-opacity="0.09" stroke-width="4"/>
+    </symbol>
+
+    <!-- 1 · Jotter: a spiral pad with jotted lines -->
+    <symbol id="jotter" viewBox="0 0 1024 1024">
+      <use href="#base-dark"/>
+      <rect x="272" y="288" width="480" height="494" rx="40" fill="url(#paper)" filter="url(#lift)"/>
+      <g fill="#18181c">
+        <circle cx="322" cy="328" r="13"/>
+        <circle cx="398" cy="328" r="13"/>
+        <circle cx="474" cy="328" r="13"/>
+        <circle cx="550" cy="328" r="13"/>
+        <circle cx="626" cy="328" r="13"/>
+        <circle cx="702" cy="328" r="13"/>
+      </g>
+      <g fill="#a0a0a8">
+        <rect x="311" y="238" width="22" height="94" rx="11"/>
+        <rect x="387" y="238" width="22" height="94" rx="11"/>
+        <rect x="463" y="238" width="22" height="94" rx="11"/>
+        <rect x="539" y="238" width="22" height="94" rx="11"/>
+        <rect x="615" y="238" width="22" height="94" rx="11"/>
+        <rect x="691" y="238" width="22" height="94" rx="11"/>
+      </g>
+      <g fill="#0c0c0e" fill-opacity="0.28">
+        <rect x="330" y="420" width="360" height="24" rx="12"/>
+        <rect x="330" y="500" width="290" height="24" rx="12"/>
+        <rect x="330" y="580" width="330" height="24" rx="12"/>
+        <rect x="330" y="660" width="200" height="24" rx="12"/>
+      </g>
+    </symbol>
+
+    <!-- 2 · Board: cards brighten as they move towards Done -->
+    <symbol id="board" viewBox="0 0 1024 1024">
+      <use href="#base-dark"/>
+      <g fill="#ededef">
+        <g fill-opacity="0.3">
+          <rect x="220" y="304" width="170" height="120" rx="30"/>
+          <rect x="220" y="452" width="170" height="120" rx="30"/>
+          <rect x="220" y="600" width="170" height="120" rx="30"/>
+        </g>
+        <g fill-opacity="0.6">
+          <rect x="427" y="304" width="170" height="120" rx="30"/>
+          <rect x="427" y="452" width="170" height="120" rx="30"/>
+        </g>
+        <rect x="634" y="304" width="170" height="120" rx="30"/>
+      </g>
+      <path d="M686 366 L708 388 L754 342" fill="none" stroke="#0c0c0e" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- 3 · j: a lowercase j whose dot is a note -->
+    <symbol id="j" viewBox="0 0 1024 1024">
+      <use href="#base-dark"/>
+      <path d="M640 440 V620 A140 140 0 0 1 379 690" fill="none" stroke="#ededef" stroke-width="110" stroke-linecap="round"/>
+      <rect x="580" y="210" width="120" height="120" rx="28" fill="#ededef" transform="rotate(8 640 270)"/>
+    </symbol>
+
+    <!-- 4 · Notebook: a closed black notebook with an elastic band, on a light tile -->
+    <symbol id="notebook" viewBox="0 0 1024 1024">
+      <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg-light)" filter="url(#shadow)"/>
+      <rect x="102" y="102" width="820" height="820" rx="183" fill="none" stroke="#000" stroke-opacity="0.06" stroke-width="4"/>
+      <path d="M420 770 H446 V860 L433 846 L420 860 Z" fill="#3a3a42"/>
+      <g filter="url(#lift)">
+        <path d="M332 236 H668 A44 44 0 0 1 712 280 V744 A44 44 0 0 1 668 788 H332 A20 20 0 0 1 312 768 V256 A20 20 0 0 1 332 236 Z" fill="url(#cover)"/>
+      </g>
+      <g clip-path="url(#book-clip)">
+        <rect x="312" y="236" width="36" height="552" fill="#000" fill-opacity="0.3"/>
+        <rect x="348" y="236" width="3" height="552" fill="#fff" fill-opacity="0.07"/>
+        <rect x="640" y="236" width="30" height="552" fill="#ededef"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<h1>Jottr icon concepts</h1>
+<p class="sub">Large preview, then Dock and Finder sizes (64, 32, 16) on dark and light backgrounds.</p>
+<div class="grid"></div>
+
+<script>
+  const icons = [
+    ["jotter", "1 · Jotter", "A spiral pad with jotted lines. Nods to the name."],
+    ["board", "2 · Board", "Cards brighten as they move towards Done."],
+    ["j", "3 · j", "A lowercase j whose dot is a note."],
+    ["notebook", "4 · Notebook", "A closed black notebook with an elastic band."],
+  ];
+  const svg = (id, size) =>
+    `<svg width="${size}" height="${size}" viewBox="0 0 1024 1024"><use href="#${id}"/></svg>`;
+  const sizes = (id) => [64, 32, 16].map((size) => svg(id, size)).join("");
+  document.querySelector(".grid").innerHTML = icons
+    .map(
+      ([id, name, desc]) => `
+      <div class="card">
+        ${svg(id, 220)}
+        <div class="name">${name}</div>
+        <div class="desc">${desc}</div>
+        <div class="strip dark">${sizes(id)}</div>
+        <div class="strip light">${sizes(id)}</div>
+      </div>`,
+    )
+    .join("");
+</script>
+</body>
+</html>
