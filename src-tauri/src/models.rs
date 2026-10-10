@@ -120,6 +120,7 @@ pub struct Ticket {
     pub priority: Priority,
     pub due_date: Option<String>,
     pub position: f64,
+    pub created_at: f64,
     pub completed_at: Option<f64>,
     pub checklist_done: i32,
     pub checklist_total: i32,
@@ -134,7 +135,8 @@ impl Ticket {
          t.description, t.status, t.priority, t.due_date, t.position, t.completed_at, \
          (SELECT COUNT(*) FROM checklist_items c WHERE c.ticket_id = t.id AND c.done = 1), \
          (SELECT COUNT(*) FROM checklist_items c WHERE c.ticket_id = t.id), \
-         (SELECT GROUP_CONCAT(label_id) FROM ticket_labels l WHERE l.ticket_id = t.id), t.archived_at";
+         (SELECT GROUP_CONCAT(label_id) FROM ticket_labels l WHERE l.ticket_id = t.id), t.archived_at, \
+         t.created_at";
 
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Self {
@@ -149,6 +151,7 @@ impl Ticket {
             priority: row.get(8)?,
             due_date: row.get(9)?,
             position: row.get(10)?,
+            created_at: row.get::<_, i64>(16)? as f64,
             completed_at: row.get::<_, Option<i64>>(11)?.map(|ms| ms as f64),
             checklist_done: row.get(12)?,
             checklist_total: row.get(13)?,

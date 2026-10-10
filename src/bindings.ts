@@ -157,6 +157,7 @@ export type Ticket = {
 	priority: Priority,
 	dueDate: string | null,
 	position: number | null,
+	createdAt: number | null,
 	completedAt: number | null,
 	checklistDone: number,
 	checklistTotal: number,

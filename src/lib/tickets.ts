@@ -199,6 +199,14 @@ export function formatDue(key: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
 }
 
+const monthDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+const monthYear = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" });
+
+/** Like Linear: "Aug 13" for the last three months, then "Mar 2026" once the day stops mattering. */
+export function formatCreated(ms: number): string {
+  return (ms > addDays(-90).getTime() ? monthDay : monthYear).format(ms);
+}
+
 export const isOverdue = (t: Ticket) => t.dueDate !== null && !isFinished(t) && t.dueDate < toDateKey(new Date());
 
 /** Picker presets for `D`. "Next week" is the coming Monday. */

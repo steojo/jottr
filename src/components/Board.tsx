@@ -33,6 +33,7 @@ import {
   BOARD_ORDER,
   boardColumns,
   dropPosition,
+  formatCreated,
   formatDue,
   groupByCompletionDay,
   isFinished,
@@ -538,6 +539,9 @@ function Card({
           </span>
         )}
       </div>
+      {ticket.createdAt !== null && (
+        <p className="mt-1.5 text-[11px] text-fg-tertiary">Created {formatCreated(ticket.createdAt)}</p>
+      )}
     </div>
   );
 }
