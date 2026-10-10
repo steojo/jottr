@@ -207,6 +207,17 @@ export function formatCreated(ms: number): string {
   return (ms > addDays(-90).getTime() ? monthDay : monthYear).format(ms);
 }
 
+const time = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
+const fullDate = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+
+/** "Today 2:32 PM", "Yesterday 9:10 AM", "Oct 8" this year, or "Oct 8, 2025" before it. */
+export function formatTimestamp(ms: number): string {
+  const day = toDateKey(new Date(ms));
+  if (day === toDateKey(new Date())) return `Today ${time.format(ms)}`;
+  if (day === toDateKey(addDays(-1))) return `Yesterday ${time.format(ms)}`;
+  return new Date(ms).getFullYear() === new Date().getFullYear() ? monthDay.format(ms) : fullDate.format(ms);
+}
+
 export const isOverdue = (t: Ticket) => t.dueDate !== null && !isFinished(t) && t.dueDate < toDateKey(new Date());
 
 /** Picker presets for `D`. "Next week" is the coming Monday. */

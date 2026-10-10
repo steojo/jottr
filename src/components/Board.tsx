@@ -102,6 +102,7 @@ export function Board({
   const settings = useSettings().data;
   const showBacklog = settings?.showBacklog ?? true;
   const showCanceled = settings?.showCanceled ?? false;
+  const showCreated = settings?.showCreated ?? true;
 
   const columns = useMemo(
     () =>
@@ -299,6 +300,7 @@ export function Board({
                     ticket={ticket}
                     project={showProject ? projects.find((p) => p.id === ticket.projectId) : undefined}
                     labels={labels}
+                    showCreated={showCreated}
                     active={ticket.id === activeId}
                     keyboard={keyboard}
                     cardRef={(el) => {
@@ -328,6 +330,7 @@ export function Board({
             ticket={dragged}
             project={showProject ? projects.find((p) => p.id === dragged.projectId) : undefined}
             labels={labels}
+            showCreated={showCreated}
             active={false}
             keyboard={false}
             lifted
@@ -426,6 +429,7 @@ function SortableCard({
   ticket,
   project,
   labels,
+  showCreated,
   active,
   keyboard,
   cardRef,
@@ -435,6 +439,7 @@ function SortableCard({
   ticket: Ticket;
   project: Project | undefined;
   labels: Label[];
+  showCreated: boolean;
   active: boolean;
   keyboard: boolean;
   cardRef: (el: HTMLElement | null) => void;
@@ -458,7 +463,7 @@ function SortableCard({
         // The drop target: where the card will land.
         <div className="animate-drop-target rounded-lg border border-dashed border-line-strong motion-reduce:animate-none">
           <div className="invisible">
-            <Card ticket={ticket} project={project} labels={labels} active={false} keyboard={false} />
+            <Card ticket={ticket} project={project} labels={labels} showCreated={showCreated} active={false} keyboard={false} />
           </div>
         </div>
       ) : (
@@ -466,6 +471,7 @@ function SortableCard({
           ticket={ticket}
           project={project}
           labels={labels}
+          showCreated={showCreated}
           active={active}
           keyboard={keyboard}
           onClick={onClick}
@@ -481,6 +487,7 @@ function Card({
   ticket,
   project,
   labels,
+  showCreated,
   active,
   keyboard,
   lifted,
@@ -490,6 +497,7 @@ function Card({
   ticket: Ticket;
   project: Project | undefined;
   labels: Label[];
+  showCreated: boolean;
   active: boolean;
   keyboard: boolean;
   /** The copy that follows the pointer while dragging. */
@@ -539,7 +547,7 @@ function Card({
           </span>
         )}
       </div>
-      {ticket.createdAt !== null && (
+      {showCreated && ticket.createdAt !== null && (
         <p className="mt-1.5 text-[11px] text-fg-tertiary">Created {formatCreated(ticket.createdAt)}</p>
       )}
     </div>

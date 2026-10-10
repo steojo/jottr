@@ -8,6 +8,7 @@ import {
   PRIORITIES,
   SWATCH_BG,
   formatDue,
+  formatTimestamp,
   isOverdue,
   patch,
   statusLabel,
@@ -184,6 +185,9 @@ export function TicketPage({
             )}
           </Property>
         )}
+        <div className="mx-2 my-2 border-t border-line-subtle" />
+        <Timestamp label="Created" ms={ticket.createdAt} />
+        <Timestamp label="Updated" ms={ticket.updatedAt} />
         <button
           type="button"
           title="Delete ticket · ⌘⌫"
@@ -226,6 +230,20 @@ function Property({
         <Kbd>{shortcut}</Kbd>
       </span>
     </button>
+  );
+}
+
+/** A read-only date; hovering shows the exact time. */
+function Timestamp({ label, ms }: { label: string; ms: number | null }) {
+  if (ms === null) return null;
+  return (
+    <div
+      title={new Date(ms).toLocaleString("en-US", { dateStyle: "full", timeStyle: "short" })}
+      className="flex min-h-8 items-center gap-2 px-2"
+    >
+      <span className="w-16 shrink-0 text-fg-tertiary">{label}</span>
+      <span className="flex-1 truncate text-right text-fg-secondary">{formatTimestamp(ms)}</span>
+    </div>
   );
 }
 

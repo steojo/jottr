@@ -141,6 +141,8 @@ export type Settings = {
 	showCanceled: boolean,
 	/**  Shows a Backlog column on boards. */
 	showBacklog: boolean,
+	/**  Shows when each ticket was created on board cards. */
+	showCreated: boolean,
 };
 
 export type Status = "backlog" | "ready" | "in_progress" | "in_review" | "done" | "canceled";
@@ -158,6 +160,8 @@ export type Ticket = {
 	dueDate: string | null,
 	position: number | null,
 	createdAt: number | null,
+	/**  Last edit to the ticket, its labels, checklist or attachments. Reordering doesn't count. */
+	updatedAt: number | null,
 	completedAt: number | null,
 	checklistDone: number,
 	checklistTotal: number,

@@ -171,6 +171,13 @@ function patchCachedTicket(qc: QueryClient, boardId: string | null, id: string, 
   qc.setQueryData<Ticket[]>(ticketsKey(boardId), (list) => list?.map((t) => (t.id === id ? change(t) : t)));
 }
 
+/** Bumps `updatedAt` on a cached ticket after an edit saved outside it, e.g. an attachment. */
+function touchCachedTicket(qc: QueryClient, id: string) {
+  qc.setQueriesData<Ticket[]>({ queryKey: ["tickets"] }, (list) =>
+    list?.map((t) => (t.id === id ? { ...t, updatedAt: Date.now() } : t)),
+  );
+}
+
 /** Puts a saved ticket in its list's cache, adding it if it has just arrived (moved or restored). */
 function storeCachedTicket(qc: QueryClient, saved: Ticket) {
   if (saved.archivedAt !== null) return;
@@ -215,6 +222,7 @@ export function useChecklist(ticket: Ticket) {
       ...t,
       checklistDone: items.filter((i) => i.done).length,
       checklistTotal: items.length,
+      updatedAt: Date.now(),
     }));
   }
 
@@ -434,7 +442,10 @@ export function useAddAttachments() {
             source.files.map(async (file) => commands.addAttachmentData(ticket.id, pastedName(file), await toBase64(file))),
           ),
     // Some files may have been added before one failed, so refetch either way.
-    onSettled: (_added, _error, { ticket }) => qc.invalidateQueries({ queryKey: attachmentsKey(ticket.id) }),
+    onSettled: (_added, _error, { ticket }) => {
+      touchCachedTicket(qc, ticket.id);
+      return qc.invalidateQueries({ queryKey: attachmentsKey(ticket.id) });
+    },
   });
 }
 
@@ -448,6 +459,7 @@ export function useDeleteAttachment() {
       await qc.cancelQueries({ queryKey: key });
       const previous = qc.getQueryData<Attachment[]>(key);
       qc.setQueryData<Attachment[]>(key, (list) => list?.filter((a) => a.id !== attachment.id));
+      touchCachedTicket(qc, attachment.ticketId);
       return { key, previous };
     },
     onError: (_error, _attachment, ctx) => ctx && qc.setQueryData(ctx.key, ctx.previous),

@@ -81,6 +81,13 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
               onChange={(showCanceled) => save({ showCanceled })}
             />
           </Setting>
+          <Setting title="Show created dates" detail="Shows when each ticket was created at the bottom of its card.">
+            <Switch
+              label="Show created dates"
+              checked={settings.showCreated}
+              onChange={(showCreated) => save({ showCreated })}
+            />
+          </Setting>
         </div>
       </div>
     </div>

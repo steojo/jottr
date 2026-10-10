@@ -295,7 +295,7 @@ pub fn delete_ticket(conn: &Connection, attachments: &Path, id: String) -> CmdRe
 }
 
 /// Places a ticket at an exact status and position, e.g. after a drag and drop.
-/// Entering Done stamps `completed_at`; leaving it clears it.
+/// Entering Done stamps `completed_at`; leaving it clears it. Only a status change counts as an update.
 pub fn reposition_ticket(conn: &Connection, id: String, status: Status, position: f64) -> CmdResult<Ticket> {
     let current: Status = conn
         .query_row("SELECT status FROM tickets WHERE id = ?1", [&id], |row| row.get(0))
@@ -306,7 +306,7 @@ pub fn reposition_ticket(conn: &Connection, id: String, status: Status, position
     let changed = status != current;
     conn.execute(
         "UPDATE tickets
-         SET status = ?2, position = ?3, updated_at = ?4,
+         SET status = ?2, position = ?3, updated_at = CASE WHEN ?5 THEN ?4 ELSE updated_at END,
              completed_at = CASE WHEN ?5 THEN ?6 ELSE completed_at END
          WHERE id = ?1",
         params![id, status, position, ts, changed, (status == Status::Done).then_some(ts)],
@@ -442,19 +442,28 @@ pub fn delete_label(conn: &Connection, id: String) -> CmdResult<()> {
 }
 
 /// Adds the label to the ticket, or removes it when `applied` is false.
+/// Marks a ticket as updated, for edits stored outside the tickets table: labels, checklist and attachments.
+fn touch(conn: &Connection, ticket_id: &str) -> CmdResult<()> {
+    conn.execute("UPDATE tickets SET updated_at = ?2 WHERE id = ?1", params![ticket_id, now()]).map_err(err)?;
+    Ok(())
+}
+
 pub fn set_ticket_label(conn: &Connection, ticket_id: String, label_id: String, applied: bool) -> CmdResult<Ticket> {
-    if applied {
+    let changed = if applied {
         conn.execute(
             "INSERT OR IGNORE INTO ticket_labels (ticket_id, label_id) VALUES (?1, ?2)",
             params![ticket_id, label_id],
         )
-        .map_err(err)?;
+        .map_err(err)?
     } else {
         conn.execute(
             "DELETE FROM ticket_labels WHERE ticket_id = ?1 AND label_id = ?2",
             params![ticket_id, label_id],
         )
-        .map_err(err)?;
+        .map_err(err)?
+    };
+    if changed > 0 {
+        touch(conn, &ticket_id)?;
     }
     get_ticket(conn, &ticket_id)
 }
@@ -607,9 +616,10 @@ pub fn update_settings(conn: &Connection, settings: Settings) -> CmdResult<Setti
         return Err("Archive delay must be between 1 and 365 days".into());
     }
     conn.execute(
-        "UPDATE settings SET auto_archive = ?1, archive_after_days = ?2, show_canceled = ?3, show_backlog = ?4
+        "UPDATE settings SET auto_archive = ?1, archive_after_days = ?2, show_canceled = ?3, show_backlog = ?4,
+             show_created = ?5
          WHERE id = 1",
-        params![settings.auto_archive, settings.archive_after_days, settings.show_canceled, settings.show_backlog],
+        params![settings.auto_archive, settings.archive_after_days, settings.show_canceled, settings.show_backlog, settings.show_created],
     )
     .map_err(err)?;
     auto_archive(conn)?;
@@ -688,6 +698,7 @@ fn store_attachment(
         let _ = fs::remove_dir_all(&dir);
         return Err(e);
     }
+    touch(conn, ticket_id)?;
     get_attachment(conn, root, &id)
 }
 
@@ -728,6 +739,7 @@ pub fn add_attachment_data(
 pub fn delete_attachment(conn: &Connection, root: &Path, id: String) -> CmdResult<()> {
     let attachment = get_attachment(conn, root, &id)?;
     conn.execute("DELETE FROM attachments WHERE id = ?1", [&id]).map_err(err)?;
+    touch(conn, &attachment.ticket_id)?;
     remove_dir(&root.join(&attachment.ticket_id).join(&id))
 }
 
@@ -801,6 +813,7 @@ pub fn add_checklist_item(conn: &Connection, ticket_id: String, text: String) ->
         params![id, ticket_id, text, position, now()],
     )
     .map_err(err)?;
+    touch(conn, &ticket_id)?;
     get_checklist_item(conn, &id)
 }
 
@@ -817,10 +830,17 @@ pub fn update_checklist_item(conn: &Connection, id: String, patch: ChecklistPatc
         conn.execute("UPDATE checklist_items SET done = ?2 WHERE id = ?1", params![id, done])
             .map_err(err)?;
     }
-    get_checklist_item(conn, &id)
+    let item = get_checklist_item(conn, &id)?;
+    touch(conn, &item.ticket_id)?;
+    Ok(item)
 }
 
 pub fn delete_checklist_item(conn: &Connection, id: String) -> CmdResult<()> {
+    conn.execute(
+        "UPDATE tickets SET updated_at = ?2 WHERE id = (SELECT ticket_id FROM checklist_items WHERE id = ?1)",
+        params![id, now()],
+    )
+    .map_err(err)?;
     conn.execute("DELETE FROM checklist_items WHERE id = ?1", [id]).map_err(err)?;
     Ok(())
 }
@@ -1155,6 +1175,35 @@ mod tests {
     }
 
     /// Backdates a ticket's completion by `days`.
+    #[test]
+    fn updated_at_tracks_edits_but_not_reordering() {
+        let mut conn = db();
+        let t = titled(&mut conn, None, "Ticket", Status::Backlog);
+        let reset = |conn: &Connection| conn.execute("UPDATE tickets SET updated_at = 0", []).unwrap();
+        let updated = |conn: &Connection| get_ticket(conn, &t.id).unwrap().updated_at;
+
+        reset(&conn);
+        reposition_ticket(&conn, t.id.clone(), Status::Backlog, 5.0).unwrap();
+        assert_eq!(updated(&conn), 0.0, "reordering isn't an edit");
+        reposition_ticket(&conn, t.id.clone(), Status::Ready, 5.0).unwrap();
+        assert!(updated(&conn) > 0.0, "a status change is");
+
+        let label = create_label(&conn, "Bug".into(), Color::Red).unwrap();
+        reset(&conn);
+        set_ticket_label(&conn, t.id.clone(), label.id, true).unwrap();
+        assert!(updated(&conn) > 0.0, "adding a label");
+
+        reset(&conn);
+        let item = add_checklist_item(&conn, t.id.clone(), "Step".into()).unwrap();
+        assert!(updated(&conn) > 0.0, "adding a checklist item");
+        reset(&conn);
+        update_checklist_item(&conn, item.id.clone(), ChecklistPatch { text: None, done: Some(true) }).unwrap();
+        assert!(updated(&conn) > 0.0, "ticking it");
+        reset(&conn);
+        delete_checklist_item(&conn, item.id).unwrap();
+        assert!(updated(&conn) > 0.0, "deleting it");
+    }
+
     fn finished_days_ago(conn: &Connection, t: &Ticket, days: i64) {
         conn.execute("UPDATE tickets SET completed_at = ?2 WHERE id = ?1", params![t.id, now() - days * DAY_MS])
             .unwrap();
@@ -1188,25 +1237,26 @@ mod tests {
         assert_eq!(defaults.archive_after_days, 7);
         assert!(!defaults.show_canceled);
         assert!(defaults.show_backlog);
+        assert!(defaults.show_created);
 
         let t = titled(&mut conn, None, "Done", Status::Done);
         finished_days_ago(&conn, &t, 3);
-        update_settings(&conn, Settings { auto_archive: false, archive_after_days: 1, show_canceled: false, show_backlog: true }).unwrap();
+        update_settings(&conn, Settings { auto_archive: false, archive_after_days: 1, show_canceled: false, show_backlog: true, show_created: true }).unwrap();
         assert_eq!(auto_archive(&conn).unwrap(), 0, "off");
         assert!(list_archived(&conn).unwrap().is_empty());
 
         let saved = update_settings(
             &conn,
-            Settings { auto_archive: true, archive_after_days: 2, show_canceled: true, show_backlog: false },
+            Settings { auto_archive: true, archive_after_days: 2, show_canceled: true, show_backlog: false, show_created: false },
         )
         .unwrap();
         assert_eq!(
-            (saved.auto_archive, saved.archive_after_days, saved.show_canceled, saved.show_backlog),
-            (true, 2, true, false)
+            (saved.auto_archive, saved.archive_after_days, saved.show_canceled, saved.show_backlog, saved.show_created),
+            (true, 2, true, false, false)
         );
         assert_eq!(list_archived(&conn).unwrap().len(), 1, "saving archives anything now due");
 
-        assert!(update_settings(&conn, Settings { auto_archive: true, archive_after_days: 0, show_canceled: false, show_backlog: true }).is_err());
+        assert!(update_settings(&conn, Settings { auto_archive: true, archive_after_days: 0, show_canceled: false, show_backlog: true, show_created: true }).is_err());
     }
 
     #[test]
