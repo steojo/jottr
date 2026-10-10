@@ -237,7 +237,7 @@ function TicketRow({
         active ? "bg-surface-hover" : "hover:bg-surface-hover"
       }`}
     >
-      {/* Selected: a 2px bar drawn inside the row so nothing reflows (PRD §6.5). */}
+      {/* Selected: a 2px bar drawn inside the row so nothing reflows. */}
       {active && <span className="absolute inset-y-0 left-0 w-0.5 bg-accent" />}
       {active && keyboard && (
         <span className="pointer-events-none absolute inset-0 rounded-md shadow-[inset_0_0_0_1.5px_var(--color-accent)]" />
@@ -254,7 +254,7 @@ function TicketRow({
         </span>
       )}
       <span className={`flex-1 truncate ${isFinished(ticket) ? "text-fg-tertiary" : ""}`}>{ticket.title}</span>
-      {/* Fixed slots, same order on every row (PRD §6.5). Empty slots take no space. */}
+      {/* Fixed slots, same order on every row. Empty slots take no space. */}
       <LabelChips ids={ticket.labelIds} labels={labels} />
       {ticket.checklistTotal > 0 && <ChecklistProgress done={ticket.checklistDone} total={ticket.checklistTotal} />}
       {project && (

@@ -1,6 +1,6 @@
 # Jottr
 
-A lightweight, fast Kanban app for macOS. See [PRD.md](PRD.md) for the full spec.
+A lightweight, fast Kanban app for macOS. Single-user and fully local: no account, no server, no network.
 
 ![Jottr board view](docs/screenshot.png)
 

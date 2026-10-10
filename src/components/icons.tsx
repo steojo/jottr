@@ -1,7 +1,7 @@
 import type { Priority, Status } from "../bindings";
 import { SWATCH_BG, type MoveOption } from "../lib/tickets";
 
-/** Shape carries the meaning; colour only reinforces it (PRD §6.3). */
+/** Shape carries the meaning; colour only reinforces it. */
 export function StatusIcon({ status }: { status: Status }) {
   const common = { width: 14, height: 14, viewBox: "0 0 14 14", className: "shrink-0" };
   switch (status) {

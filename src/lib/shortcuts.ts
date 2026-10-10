@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 /**
  * Keys are combos like `c`, `shift+j`, `mod+\`, `arrowdown`, or `g i` for the
- * G-prefix navigation sequences (PRD §6.4).
+ * G-prefix navigation sequences.
  */
 export type ShortcutMap = Record<string, (e: KeyboardEvent) => void>;
 

@@ -1,6 +1,6 @@
 import { Dialog, Kbd } from "./ui";
 
-/** Everything listed here works today; keep it in step with the shortcuts in the code (PRD §6.4). */
+/** Everything listed here works today; keep it in step with the shortcuts in the code. */
 const SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
     title: "Anywhere",

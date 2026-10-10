@@ -13,7 +13,7 @@ const ARCHIVE_DAYS = [1, 3, 7, 14, 30];
 // Controls are reached with Tab, so they show the focus ring for keyboard focus only.
 const ring = "outline-none focus-visible:shadow-[0_0_0_1.5px_var(--color-accent)]";
 
-/** `⌘,`: app-wide settings (PRD §5.14). Esc goes back to where you were. */
+/** `⌘,`: app-wide settings. Esc goes back to where you were. */
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const settings = useSettings().data;
   const update = useUpdateSettings();

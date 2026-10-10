@@ -17,7 +17,7 @@ const item =
 export { panel as menuPanel, item as menuItem };
 
 /**
- * Right-click menu for a ticket (PRD §6.4). Mirrors the S / P / M pickers,
+ * Right-click menu for a ticket. Mirrors the S / P / M pickers,
  * with each option's icon and a tick on the current value.
  */
 export function TicketMenu({

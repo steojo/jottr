@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Design tokens (PRD §6.1). Components use these, never raw hex values.
+ * Design tokens. Components use these, never raw hex values.
  * Utilities: bg-surface, border-line, text-fg-secondary, bg-accent, etc.
  */
 @theme {
@@ -36,7 +36,7 @@
   --color-status-urgent: #f2924a;
   --color-status-error: #eb5757;
 
-  /* The board's drop target is the only animated element (PRD §6.9). */
+  /* The board's drop target is the only animated element. */
   --animate-drop-target: drop-target 120ms ease-out;
 
   @keyframes drop-target {
@@ -74,7 +74,7 @@
   }
 }
 
-/* Ticket descriptions (TipTap). Sizes stay at 15px or below (PRD §6.2). */
+/* Ticket descriptions (TipTap). Sizes stay at 15px or below. */
 @layer components {
   .description {
     font-size: 14px;

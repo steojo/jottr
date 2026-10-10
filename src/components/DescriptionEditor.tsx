@@ -1,4 +1,4 @@
-// Loaded lazily (PRD §2.3): TipTap is the heaviest dependency and only the ticket page needs it.
+// Loaded lazily: TipTap is the heaviest dependency and only the ticket page needs it.
 import { Placeholder } from "@tiptap/extensions";
 import { Markdown } from "@tiptap/markdown";
 import { EditorContent, useEditor } from "@tiptap/react";

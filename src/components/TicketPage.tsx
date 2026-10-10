@@ -23,7 +23,7 @@ import { Kbd } from "./ui";
 
 const DescriptionEditor = lazy(() => import("./DescriptionEditor"));
 
-/** PRD §6.8: the title is the interface; properties sit in a right-hand column. */
+/** The title is the interface; properties sit in a right-hand column. */
 export function TicketPage({
   ticket,
   boards,

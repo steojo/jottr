@@ -24,7 +24,7 @@ const item = (active: boolean) =>
 const menuItem =
   "flex h-7 cursor-default items-center rounded-md px-2 text-fg-secondary outline-none select-none data-[highlighted]:bg-surface-hover data-[highlighted]:text-fg";
 
-/** PRD §6.7: Inbox, then boards that expand to show their projects, then Archive and Settings. */
+/** Inbox, then boards that expand to show their projects, then Archive and Settings. */
 export function Sidebar({
   boards,
   projects,

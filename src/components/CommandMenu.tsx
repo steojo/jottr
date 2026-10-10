@@ -11,7 +11,7 @@ export type Command = {
   label: string;
   /** Section shown when the menu opens empty. */
   group: string;
-  /** Shown as keys, e.g. "S" or "G I"; also teaches the shortcut (PRD §6.4). */
+  /** Shown as keys, e.g. "S" or "G I"; also teaches the shortcut. */
   shortcut?: string;
   icon?: ReactNode;
   /** Extra words that should find this command. */

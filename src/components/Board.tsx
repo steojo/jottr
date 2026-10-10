@@ -59,7 +59,7 @@ const measuring = { droppable: { strategy: MeasuringStrategy.Always } };
 // Done is ordered by completion, so its cards never shift to make room.
 const noSorting: SortingStrategy = () => null;
 
-/** PRD §6.6: status columns, drag and drop or keyboard, collapsible columns, Done grouped by day. */
+/** Status columns, drag and drop or keyboard, collapsible columns, Done grouped by day. */
 export function Board({
   boardId,
   tickets,
@@ -440,7 +440,7 @@ function SortableCard({
       }}
       {...attributes}
       {...listeners}
-      // Cards jump straight to their new place; no transition (PRD §6.9).
+      // Cards jump straight to their new place; no transition.
       style={{ transform: CSS.Translate.toString(transform) }}
       className="outline-none"
     >
@@ -466,7 +466,7 @@ function SortableCard({
   );
 }
 
-/** Project (if any), title up to two lines, then a meta row (PRD §6.6). */
+/** Project (if any), title up to two lines, then a meta row. */
 function Card({
   ticket,
   project,

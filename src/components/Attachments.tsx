@@ -9,7 +9,7 @@ import { ConfirmDialog } from "./FormDialogs";
 import { menuItem, menuPanel } from "./TicketMenu";
 import { Kbd } from "./ui";
 
-/** PRD §5.10: tiles with image thumbnails, below the checklist on the ticket page. */
+/** Tiles with image thumbnails, below the checklist on the ticket page. */
 export function Attachments({ ticket, onAdd }: { ticket: Ticket; onAdd: () => void }) {
   const attachments = useAttachments(ticket.id).data;
   const remove = useDeleteAttachment();

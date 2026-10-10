@@ -6,7 +6,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Jottr is a single-user, local-only Kanban app for macOS (Tauri 2 + Rust + React). It's open source at https://github.com/steojo/jottr.
 
-**`PRD.md` is the source of truth** for features, data concepts, UI and keyboard behaviour. Read the relevant section before implementing anything, and update the PRD in the same change when a decision changes. The items listed in PRD §7 (Out of Scope) are deliberately excluded, so don't add them.
+**Features come from tickets in Jottr itself**, mostly the Open Source project on the Engineering board. When asked to build a ticket (e.g. `ENG-28`), read its title, description and checklist (the spec) straight from the local database, read-only:
+
+```sh
+sqlite3 -readonly ~/Library/Application\ Support/com.steojo.jottr/jottr.db \
+  "SELECT t.title, t.description, (SELECT group_concat(c.text, ' | ') FROM checklist_items c WHERE c.ticket_id = t.id)
+   FROM tickets t JOIN boards b ON b.id = t.board_id WHERE b.key = 'ENG' AND t.number = 28"
+```
+
+Never write to that database; the running app owns it.
+
+## Product rules
+
+- **Lightweight over feature-rich:** Linear without the bloat. Every feature and every dependency must earn its place.
+- **Single user, macOS only, fully local:** no account, server or network calls. No Mac App Store, because its sandbox makes system-wide features like quick capture harder.
+- **Structure:** Board (name, key like `ENG`, colour) → Project → Ticket, plus a global Inbox for tickets not on a board yet. Statuses are fixed for every board: Backlog → Ready → In Progress → In Review → Done, plus Canceled.
+- **Performance targets:** interactions under 50ms with optimistic UI; search under 50ms per keystroke with 10,000+ tickets; drag and drop at display refresh rate; cold launch under 1s; idle memory under 100MB; download under 15MB; quick capture shown in under 100ms (create its window hidden at launch). Heavy work runs in Rust, long lists are virtualized, and heavy UI is lazy-loaded.
 
 ## Commands
 
@@ -64,7 +79,7 @@ Rust owns all data; the UI never touches the database directly.
 
 ## Styling & design rules
 
-- **Tailwind v4 via `@tailwindcss/vite`.** There's no `tailwind.config`. All design tokens live in the `@theme` block of `src/index.css`, mapped from the PRD §6.1 token names:
+- **Tailwind v4 via `@tailwindcss/vite`.** There's no `tailwind.config`. All design tokens live in the `@theme` block of `src/index.css`, in these groups:
   - `bg/*` → `surface*` (e.g. `bg-surface-elevated`)
   - `border/*` → `line*` (e.g. `border-line-subtle`)
   - `text/*` → `fg*` (e.g. `text-fg-tertiary`)
@@ -72,11 +87,11 @@ Rust owns all data; the UI never touches the database directly.
   - `status/*` → `status-*`
   
   These names avoid clashing with Tailwind's built-ins (e.g. `text-base`). Never use raw hex values in components.
-- **The accent is monochrome (near-white)** and is used only for: the selected item, the focus ring, the primary button, progress fills and the Done status. Status and priority colours describe tickets and never use the accent (PRD §6.1).
-- **Fonts:** Inter is bundled via `@fontsource-variable/inter` (imported in `src/main.tsx`). `font-mono` is the system SF Mono. Nothing may load from the network: the app must work fully offline.
-- **Keyboard and mouse:** every mouse action needs a shortcut, and every action must also work with the mouse (clickable control, right-click menu in `TicketMenu.tsx`, or both). Follow the rules and key map in PRD §6.4. Single letters act on the selection, `G` is a navigation prefix, and `⌘` is for app-level actions. Single-letter shortcuts are off while typing in a text field.
+- **The accent is monochrome (near-white)** and is used only for: the selected item, the focus ring, the primary button, progress fills and the Done status. Status and priority colours describe tickets and never use the accent. Status icons carry meaning by shape, so they still read without colour.
+- **Fonts:** Inter is bundled via `@fontsource-variable/inter` (imported in `src/main.tsx`), in Regular, Medium (interactive elements) and Semibold (headings, numbers), never Bold. `font-mono` is the system SF Mono, for ticket IDs and small metadata. Nothing may load from the network: the app must work fully offline.
+- **Keyboard and mouse:** every mouse action needs a shortcut, and every action must also work with the mouse (clickable control, right-click menu in `TicketMenu.tsx`, or both). Single letters act on the selection, `G` is a navigation prefix, and `⌘` is for app-level actions. Single-letter shortcuts are off while typing in a text field. Pickers are numbered (`1`–`9`), and tooltips and ⌘K show each action's key (e.g. "Change status · S"). The key map is `ShortcutSheet.tsx`; keep it in step. Reserved for planned features: `R` repeat, `⌥Space` quick capture (configurable), and `X` / `⇧J` / `⇧K` / `⌘A` multi-select.
+- **States:** hover changes the background only, so nothing shifts. The selected row or card gets a 2px inset accent bar; keyboard focus adds a 1.5px inset accent ring, never shown after a click. Finished titles are dimmed. Every view has empty, filtered-empty (with Clear filters) and error states. Important text meets 4.5:1 contrast.
 - **Size and motion:** UI text is 15px or smaller (the ticket page title is the only exception). The board drop target is the only animated element, and it respects Reduce Motion.
-- **Performance budgets (PRD §2.2–2.3):** interactions under 50ms, optimistic UI, and virtualized long lists. Every new dependency has to justify its weight.
 
 ## Repo notes
 
@@ -85,6 +100,6 @@ Rust owns all data; the UI never touches the database directly.
 ## Working efficiently
 
 The owner's usage limits are tight, so keep context small:
-- Use one chat per feature. This file, `PRD.md` and the code carry the context, so don't re-read files you don't need.
+- Use one chat per feature. This file, the ticket and the code carry the context, so don't re-read files you don't need.
 - Verify with `npm run build` and `cd src-tauri && cargo test` first. For UI checks, prefer reading text from the page over screenshots. Take a screenshot only when the look of something changed, at 1x scale.
 - Batch checks into as few tool calls as possible, and edit with targeted edits rather than rewriting whole files.
