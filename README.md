@@ -4,6 +4,10 @@ A lightweight, fast Kanban app for macOS. Single-user and fully local: no accoun
 
 ![Jottr board view](docs/screenshot.png)
 
+## Install
+
+Download the latest `.dmg` from [Releases](https://github.com/steojo/jottr/releases) (Apple Silicon only). Jottr isn't notarized yet, so macOS blocks the first launch: drag Jottr to Applications and open it, then go to System Settings → Privacy & Security and click Open Anyway.
+
 ## Develop
 
 ```sh

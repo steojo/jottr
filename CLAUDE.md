@@ -40,7 +40,10 @@ npm run build         # tsc type-check + Vite build of the frontend only (fastes
 cd src-tauri && cargo test     # Rust tests (also regenerates src/bindings.ts)
 cd src-tauri && cargo test store::tests::numbers_tickets_per_board   # a single test
 cd src-tauri && cargo clippy --all-targets
+npm version 0.2.0 -m "Release v%s" && git push --follow-tags   # release: bumps package.json, Cargo.toml and Cargo.lock, commits and tags
 ```
+
+The version lives in `package.json` (`tauri.conf.json` reads it). Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds an Apple Silicon DMG into a draft GitHub Release for review. It's ad-hoc signed (`signingIdentity: "-"`) but not notarized yet, so users need Open Anyway. There's no auto-updater, since it would need network calls.
 
 There are no frontend tests or JS linter yet. Rust is installed via rustup; if `cargo` isn't on PATH in a non-interactive shell, run `. "$HOME/.cargo/env"`.
 
