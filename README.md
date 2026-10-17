@@ -17,3 +17,7 @@ npm run tauri build   # build Jottr.app and a .dmg
 ```
 
 Requires Xcode Command Line Tools, Node.js and Rust (`rustup`).
+
+## License
+
+Licensed under the [MIT License](LICENSE).
