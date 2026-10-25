@@ -119,6 +119,14 @@ export function CheckIcon() {
   );
 }
 
+export function ChevronLeftIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" className="shrink-0" aria-hidden="true">
+      <path d="M7.5 2.5L4 6l3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function ChevronRightIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" className="shrink-0">

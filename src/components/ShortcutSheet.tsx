@@ -20,6 +20,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
   {
     title: "Go to",
     keys: [
+      ["⌘ [", "Back"],
       ["G I", "Inbox"],
       ["G F", "My Focus"],
       ["G B", "Board…"],
@@ -80,7 +81,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: "Ticket page",
     keys: [
       ["J  K", "Next / previous ticket"],
-      ["Esc", "Back to the list"],
+      ["Esc", "Back to the previous view"],
       ["⌘ ↵", "Finish editing"],
     ],
   },

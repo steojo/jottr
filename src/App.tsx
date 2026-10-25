@@ -8,7 +8,7 @@ import { CreateBoardDialog } from "./components/CreateBoardDialog";
 import { CreateTicketDialog } from "./components/CreateTicketDialog";
 import { FilterBar, FilterMenu } from "./components/Filters";
 import { ConfirmDialog, NameDialog } from "./components/FormDialogs";
-import { ChevronUpDownIcon, PlusIcon, ProjectIcon } from "./components/icons";
+import { ChevronLeftIcon, ChevronUpDownIcon, PlusIcon, ProjectIcon } from "./components/icons";
 import { Notes } from "./components/Notes";
 import type { NotesHandle } from "./components/NotesEditor";
 import { Picker } from "./components/Picker";
@@ -44,6 +44,7 @@ import { runShortcut, useShortcuts } from "./lib/shortcuts";
 import { usePersistentState } from "./lib/storage";
 import {
   NO_FILTERS,
+  NO_PROJECT,
   SWATCH_BG,
   applyFilters,
   archiveGroups,
@@ -56,6 +57,14 @@ import {
   type Destination,
   type Filters,
 } from "./lib/tickets";
+
+type NavigationEntry = { view: View; activeId: string | null; openId: string | null; filters: Filters };
+
+function sameView(a: View, b: View) {
+  return a.kind === b.kind && (
+    a.kind !== "board" || (b.kind === "board" && a.boardId === b.boardId && a.projectId === b.projectId)
+  );
+}
 
 function App() {
   const [view, setView] = useState<View>({ kind: "inbox" });
@@ -81,8 +90,9 @@ function App() {
   const [deletingTicket, setDeletingTicket] = useState<Ticket | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = usePersistentState<string[]>("jottr.sidebar.expanded", []);
-  // Where Esc or ⌘, on Settings goes back to.
-  const settingsReturn = useRef<View>({ kind: "inbox" });
+  const [history, setHistory] = useState<NavigationEntry[]>([]);
+  // Ignore a ticket fetched for Back if another navigation has happened in the meantime.
+  const navigationVersion = useRef(0);
 
   const boards = useBoards().data ?? [];
   const projects = useProjects().data ?? [];
@@ -188,8 +198,70 @@ function App() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  function navigate(next: View) {
-    if (next.kind === "settings" && view.kind !== "settings") settingsReturn.current = view;
+  // Skip removed scopes and entries already on screen (e.g. after deleting an open ticket).
+  let backIndex = history.length - 1;
+  while (backIndex >= 0) {
+    const previous = history[backIndex];
+    const scope = previous.view;
+    const exists = scope.kind !== "board" || (boards.some((b) => b.id === scope.boardId) &&
+      (!scope.projectId || projects.some((p) => p.id === scope.projectId)));
+    if (exists && (!sameView(scope, view) || previous.openId !== openId)) break;
+    backIndex--;
+  }
+  const canGoBack = backIndex >= 0 || openId !== null || view.kind === "settings";
+
+  function rememberLocation(selection = activeId) {
+    navigationVersion.current++;
+    // Session-only, bounded history; ticket contents are fetched afresh when revisited.
+    setHistory((entries) => [...entries.slice(-99), { view, activeId: selection, openId, filters }]);
+  }
+
+  function goBack() {
+    if (!canGoBack) return;
+    // Header buttons keep focus out of the way; blur explicitly to save an edited title.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    // A bounded history can end on a ticket; always leave a way out of detail pages.
+    if (backIndex < 0) {
+      navigationVersion.current++;
+      if (view.kind === "settings") navigate({ kind: "inbox" }, false);
+      else setOpenId(null);
+      return;
+    }
+    const previous = history[backIndex];
+    const version = ++navigationVersion.current;
+    setHistory((entries) => entries.slice(0, backIndex));
+    const restoreLocation = (ticket: Ticket | null) => {
+      if (version !== navigationVersion.current) return;
+      let scope = previous.view;
+      // A ticket may have moved or been archived since this entry was recorded.
+      if (ticket && (ticket.archivedAt !== null || scope.kind === "archive" ||
+        (scope.kind === "board" && (scope.boardId !== ticket.boardId ||
+          (scope.projectId && scope.projectId !== ticket.projectId))) ||
+        (scope.kind === "inbox" && ticket.boardId !== null))) {
+        scope = ticket.archivedAt !== null ? { kind: "archive" } :
+          ticket.boardId ? { kind: "board", boardId: ticket.boardId } : { kind: "inbox" };
+      }
+      lastOpen.current = ticket;
+      setView(scope);
+      setActiveId(ticket?.id ?? previous.activeId);
+      setOpenId(ticket?.id ?? null);
+      setFilters(sameView(scope, previous.view) ? {
+        ...previous.filters,
+        labelIds: previous.filters.labelIds.filter((id) => allLabels?.some((l) => l.id === id)),
+        projectIds: previous.filters.projectIds.filter((id) => id === NO_PROJECT || projects.some((p) => p.id === id)),
+      } : NO_FILTERS);
+    };
+    if (previous.openId) {
+      void fetchTicket(previous.openId).then(restoreLocation, () => restoreLocation(null));
+    } else {
+      restoreLocation(null);
+    }
+  }
+
+  function navigate(next: View, remember = true) {
+    if (sameView(next, view) && !openId) return;
+    if (remember) rememberLocation();
+    else navigationVersion.current++;
     setView(next);
     setActiveId(null);
     setOpenId(null);
@@ -197,22 +269,26 @@ function App() {
   }
 
   function open(ticket: Ticket) {
+    if (!openId) rememberLocation(ticket.id);
+    else navigationVersion.current++;
     setActiveId(ticket.id);
     setOpenId(ticket.id);
   }
 
   /** Opens a ticket from anywhere (e.g. search) on its own board, in the Inbox, or in the Archive. */
   function openAnywhere(ticket: Ticket) {
-    navigate(
-      ticket.archivedAt !== null
+    if (ticket.id === openId) return;
+    rememberLocation();
+    setView(ticket.archivedAt !== null
         ? { kind: "archive" }
         : ticket.boardId
           ? { kind: "board", boardId: ticket.boardId }
-          : { kind: "inbox" },
-    );
+          : { kind: "inbox" });
+    setFilters(NO_FILTERS);
     // Show it straight away, before its board's tickets have loaded.
     lastOpen.current = ticket;
-    open(ticket);
+    setActiveId(ticket.id);
+    setOpenId(ticket.id);
   }
 
   /** Opens a ticket linked from notes: in place if it's in this view, otherwise wherever it is now. */
@@ -250,6 +326,7 @@ function App() {
     // The selection passes to a neighbour; an open ticket returns you to the list.
     const i = order.findIndex((t) => t.id === ticket.id);
     removeTicket.mutate(ticket);
+    setHistory((entries) => entries.filter((entry) => entry.openId !== ticket.id));
     if (ticket.id === openId) setOpenId(null);
     if (ticket.id === activeId || ticket.id === openId) setActiveId((order[i + 1] ?? order[i - 1])?.id ?? null);
   }
@@ -294,7 +371,7 @@ function App() {
   // From the notes, ⌘B goes back to the board's tickets as they were.
   const toggleLayout = () =>
     view.kind === "board" && (showNotes ? setNotesOpen(false) : setLayout(showBoard ? "list" : "board"));
-  const toggleSettings = () => navigate(view.kind === "settings" ? settingsReturn.current : { kind: "settings" });
+  const toggleSettings = () => view.kind === "settings" ? goBack() : navigate({ kind: "settings" });
 
   function boardActions(b: BoardData): SidebarAction[] {
     return [
@@ -357,6 +434,7 @@ function App() {
     "mod+\\": () => setSidebarOpen((o) => !o),
     "mod+b": toggleLayout,
     "mod+,": toggleSettings,
+    "mod+[": goBack,
   });
 
   // ⌘K. Ticket actions reuse the views' own shortcuts, so they behave exactly like the keys.
@@ -405,6 +483,9 @@ function App() {
         commands.push({ id: action.value, label: action.label, group: project.name, run: action.run });
       }
     }
+  }
+  if (canGoBack) {
+    commands.push({ id: "go-back", label: "Go back", group: "Go to", shortcut: "⌘ [", icon: <ChevronLeftIcon />, run: goBack });
   }
   commands.push(
     { id: "go-inbox", label: "Go to Inbox", group: "Go to", shortcut: "G I", run: () => navigate({ kind: "inbox" }) },
@@ -555,11 +636,12 @@ function App() {
             sidebarOpen ? "pl-4" : "pl-20"
           }`}
         >
+          <HeaderButton title="Go back · ⌘[" disabled={!canGoBack} onClick={goBack}>
+            <ChevronLeftIcon />
+          </HeaderButton>
           {openTicket ? (
             <>
-              <HeaderButton title="Back to list · Esc" onClick={() => setOpenId(null)}>
-                <span className="flex items-center gap-2 font-medium text-fg-secondary">{scopeLabel}</span>
-              </HeaderButton>
+              <span className="pointer-events-none flex items-center gap-2 font-medium text-fg-secondary">{scopeLabel}</span>
               <span className="pointer-events-none text-fg-quaternary">/</span>
               <span className="pointer-events-none font-mono text-[11px] text-fg-secondary">
                 {ticketKey(openTicket) ?? "Ticket"}
@@ -661,7 +743,7 @@ function App() {
             ticket={openTicket}
             boards={boards}
             projects={projects}
-            onClose={() => setOpenId(null)}
+            onClose={goBack}
             onStep={step}
             onMove={moveTicket}
             onDelete={setDeletingTicket}
@@ -812,10 +894,7 @@ function App() {
           if (!deleting) return;
           await deleteProject.mutateAsync(deleting.id);
           setFilters((f) => ({ ...f, projectIds: f.projectIds.filter((id) => id !== deleting.id) }));
-          if (settingsReturn.current.kind === "board" && settingsReturn.current.projectId === deleting.id) {
-            settingsReturn.current = { kind: "board", boardId: deleting.boardId };
-          }
-          if (project?.id === deleting.id) navigate({ kind: "board", boardId: deleting.boardId });
+          if (project?.id === deleting.id) navigate({ kind: "board", boardId: deleting.boardId }, false);
         }}
       />
       <ConfirmDialog
@@ -833,10 +912,7 @@ function App() {
             labelIds: f.labelIds.filter((id) => !allLabels?.some((label) => label.id === id && label.boardId === deletingBoard.id)),
             projectIds: f.projectIds.filter((id) => !projects.some((p) => p.id === id && p.boardId === deletingBoard.id)),
           }));
-          if (settingsReturn.current.kind === "board" && settingsReturn.current.boardId === deletingBoard.id) {
-            settingsReturn.current = { kind: "inbox" };
-          }
-          if (view.kind === "board" && view.boardId === deletingBoard.id) navigate({ kind: "inbox" });
+          if (view.kind === "board" && view.boardId === deletingBoard.id) navigate({ kind: "inbox" }, false);
           else if (openTicket?.boardId === deletingBoard.id) setOpenId(null);
         }}
       />
@@ -862,7 +938,7 @@ function HeaderButton({
       disabled={disabled}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
-      className="flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-fg-secondary hover:bg-surface-hover hover:text-fg disabled:text-fg-quaternary disabled:hover:bg-transparent"
+      className="flex h-7 min-w-7 items-center justify-center rounded-md px-1.5 text-fg-secondary outline-none hover:bg-surface-hover focus-visible:shadow-[inset_0_0_0_1.5px_var(--color-accent)] disabled:text-fg-quaternary disabled:hover:bg-transparent"
     >
       {children}
     </button>
