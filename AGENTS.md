@@ -17,6 +17,7 @@ Jottr is a single-user, local-only Kanban app for macOS (Tauri 2 + Rust + React)
 npm install
 npm run tauri dev     # run the app: Vite on fixed port 1420 with HMR; Rust changes recompile and relaunch
 npm run tauri build   # release build → src-tauri/target/release/bundle/ (Jottr.app + .dmg)
+npm run install-app   # release build of Jottr.app that replaces /Applications/Jottr.app, quitting and reopening it
 npm run build         # tsc type-check + Vite build of the frontend only (fastest TS check)
 cd src-tauri && cargo test     # Rust tests (also regenerates src/bindings.ts)
 cd src-tauri && cargo test store::tests::numbers_tickets_per_board   # a single test

@@ -14,6 +14,7 @@ Download the latest `.dmg` from [Releases](https://github.com/steojo/jottr/relea
 npm install
 npm run tauri dev     # run the app with live reload
 npm run tauri build   # build Jottr.app and a .dmg
+npm run install-app   # build Jottr.app and install it in /Applications
 ```
 
 Requires Xcode Command Line Tools, Node.js and Rust (`rustup`).
