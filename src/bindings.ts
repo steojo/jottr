@@ -59,8 +59,15 @@ export const commands = {
 	/**  Brings a ticket back from the Archive to the top of its status group. */
 	restoreTicket: (id: string) => __TAURI_INVOKE<Ticket>("restore_ticket", { id }),
 	getSettings: () => __TAURI_INVOKE<Settings>("get_settings"),
-	/**  Saves the settings, then archives anything they now make due. */
+	/**
+	 *  Saves the settings, then archives anything they now make due. A changed quick capture
+	 *  shortcut is only saved once macOS accepts it.
+	 */
 	updateSettings: (settings: Settings) => __TAURI_INVOKE<Settings>("update_settings", { settings }),
+	/**  Adds a ticket to the bottom of the Inbox from the quick capture box, then hides the box. */
+	captureTicket: (title: string) => __TAURI_INVOKE<Ticket>("capture_ticket", { title }),
+	/**  Hides the quick capture box. */
+	closeCapture: () => __TAURI_INVOKE<void>("close_capture"),
 	/**  A ticket's attachments, oldest first. */
 	listAttachments: (ticketId: string) => __TAURI_INVOKE<Attachment[]>("list_attachments", { ticketId }),
 	/**  Copies files (by path, from the file picker or a drop) and attaches them to a ticket. */
@@ -160,6 +167,10 @@ export type Settings = {
 	showBacklog: boolean,
 	/**  Shows when each ticket was created on board cards. */
 	showCreated: boolean,
+	/**  Opens the quick capture box from any app with the capture shortcut. */
+	quickCapture: boolean,
+	/**  In the global shortcut plugin's format, e.g. `Alt+Space`. */
+	captureShortcut: string,
 };
 
 export type Status = "backlog" | "ready" | "in_progress" | "in_review" | "done" | "canceled";

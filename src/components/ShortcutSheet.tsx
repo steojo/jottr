@@ -1,3 +1,5 @@
+import { useSettings } from "../lib/queries";
+import { formatShortcut } from "../lib/shortcuts";
 import { Dialog, Kbd } from "./ui";
 
 /** Everything listed here works today; keep it in step with the shortcuts in the code. */
@@ -86,11 +88,26 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
 
 /** `?`: every keyboard shortcut on one sheet. */
 export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const settings = useSettings().data;
+  // Quick capture's shortcut is set in Settings, and works in every app.
+  const sections = settings?.quickCapture
+    ? [
+        ...SECTIONS,
+        {
+          title: "Quick capture",
+          keys: [
+            [formatShortcut(settings.captureShortcut), "Add to the Inbox from any app"],
+            ["↵", "Add"],
+            ["Esc", "Close"],
+          ] as [string, string][],
+        },
+      ]
+    : SECTIONS;
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="Keyboard shortcuts" width="w-[640px]" focusContent>
       <div className="flex h-10 items-center border-b border-line-subtle px-4 font-medium">Keyboard shortcuts</div>
       <div className="grid max-h-[65vh] grid-cols-2 gap-x-8 gap-y-5 overflow-y-auto p-4">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <section key={section.title}>
             <h3 className="mb-1.5 font-mono text-[10px] tracking-wider text-fg-quaternary uppercase">{section.title}</h3>
             {section.keys.map(([keys, label]) => (

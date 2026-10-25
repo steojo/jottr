@@ -1,9 +1,9 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Settings } from "../bindings";
 import { useSettings, useUpdateSettings } from "../lib/queries";
-import { useShortcuts } from "../lib/shortcuts";
+import { formatShortcut, globalShortcut, useShortcuts } from "../lib/shortcuts";
 import { dayCount } from "../lib/tickets";
 import { CheckIcon, ChevronUpDownIcon } from "./icons";
 import { menuItem, menuPanel } from "./TicketMenu";
@@ -89,6 +89,37 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             />
           </Setting>
         </div>
+
+        <h2 className="mt-6 px-1 font-mono text-[10px] tracking-wider text-fg-quaternary uppercase">Quick capture</h2>
+        <div className="divide-y divide-line-subtle rounded-lg border border-line-subtle">
+          <Setting
+            title="Quick capture"
+            detail="Press the shortcut in any app to add a ticket to the bottom of the Inbox, without leaving the app."
+          >
+            <Switch
+              label="Quick capture"
+              checked={settings.quickCapture}
+              onChange={(quickCapture) => save({ quickCapture })}
+            />
+          </Setting>
+          <Setting
+            title="Shortcut"
+            detail={
+              update.isError ? (
+                <span className="text-status-error">{String(update.error)}</span>
+              ) : (
+                "Click, then press the keys you want. It needs ⌘, ⌃ or ⌥."
+              )
+            }
+            disabled={!settings.quickCapture}
+          >
+            <ShortcutButton
+              shortcut={settings.captureShortcut}
+              disabled={!settings.quickCapture}
+              onChange={(captureShortcut) => save({ captureShortcut })}
+            />
+          </Setting>
+        </div>
       </div>
     </div>
   );
@@ -112,6 +143,56 @@ function Switch({ label, checked, onChange }: { label: string; checked: boolean;
   );
 }
 
+/** Records the next key pressed with ⌘, ⌃ or ⌥ as the shortcut. Esc or clicking away cancels. */
+function ShortcutButton({
+  shortcut,
+  disabled,
+  onChange,
+}: {
+  shortcut: string;
+  disabled: boolean;
+  onChange: (shortcut: string) => void;
+}) {
+  const [recording, setRecording] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!recording) return;
+    function onKeyDown(e: KeyboardEvent) {
+      // Listening in the capture phase and marking keys handled keeps the app's shortcuts out.
+      e.preventDefault();
+      if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey) return setRecording(false);
+      const next = globalShortcut(e);
+      if (!next) return;
+      setRecording(false);
+      if (next !== shortcut) onChange(next);
+    }
+    function onPointerDown(e: PointerEvent) {
+      if (!button.current?.contains(e.target as Node)) setRecording(false);
+    }
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [recording, shortcut, onChange]);
+
+  return (
+    <button
+      ref={button}
+      type="button"
+      disabled={disabled}
+      title="Change shortcut"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => setRecording(!recording)}
+      className={`flex h-7 min-w-24 items-center justify-center rounded-md border border-line px-2.5 font-mono text-[12px] enabled:hover:bg-surface-hover enabled:hover:text-fg ${recording ? "bg-surface-hover text-fg" : "text-fg-secondary"} ${ring}`}
+    >
+      {recording ? "Press keys…" : formatShortcut(shortcut)}
+    </button>
+  );
+}
+
 function Setting({
   title,
   detail,
@@ -119,7 +200,7 @@ function Setting({
   children,
 }: {
   title: string;
-  detail: string;
+  detail: ReactNode;
   disabled?: boolean;
   children: ReactNode;
 }) {

@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Jottr",
         "width": 1400,
         "height": 880,
@@ -23,6 +24,24 @@
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "trafficLightPosition": { "x": 16, "y": 20 }
+      },
+      {
+        "label": "capture",
+        "url": "capture.html",
+        "title": "Quick capture",
+        "width": 560,
+        "height": 88,
+        "visible": false,
+        "focus": false,
+        "resizable": false,
+        "minimizable": false,
+        "maximizable": false,
+        "closable": false,
+        "alwaysOnTop": true,
+        "theme": "Dark",
+        "backgroundColor": "#121215",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {

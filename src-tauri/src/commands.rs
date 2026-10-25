@@ -1,11 +1,12 @@
 use std::process::Command;
 
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
+use crate::capture;
 use crate::db::{AttachmentsDir, Db};
 use crate::models::{
-    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Project, Settings, Status,
-    Ticket, TicketDraft, TicketPatch,
+    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Priority, Project,
+    Settings, Status, Ticket, TicketDraft, TicketPatch,
 };
 use crate::store::{self, err, CmdResult};
 
@@ -262,11 +263,41 @@ pub async fn get_settings(db: State<'_, Db>) -> CmdResult<Settings> {
     store::get_settings(&*db.0.lock().map_err(err)?)
 }
 
-/// Saves the settings, then archives anything they now make due.
+/// Saves the settings, then archives anything they now make due. A changed quick capture
+/// shortcut is only saved once macOS accepts it.
 #[tauri::command]
 #[specta::specta]
-pub async fn update_settings(db: State<'_, Db>, settings: Settings) -> CmdResult<Settings> {
-    store::update_settings(&*db.0.lock().map_err(err)?, settings)
+pub async fn update_settings(app: AppHandle, db: State<'_, Db>, settings: Settings) -> CmdResult<Settings> {
+    let mut conn = db.0.lock().map_err(err)?;
+    let previous = store::get_settings(&conn)?;
+    let tx = conn.transaction().map_err(err)?;
+    let saved = store::update_settings(&tx, settings)?;
+    if (saved.quick_capture, &saved.capture_shortcut) != (previous.quick_capture, &previous.capture_shortcut) {
+        if let Err(e) = capture::register(&app, &saved) {
+            let _ = capture::register(&app, &previous);
+            return Err(e);
+        }
+    }
+    tx.commit().map_err(err)?;
+    Ok(saved)
+}
+
+/// Adds a ticket to the bottom of the Inbox from the quick capture box, then hides the box.
+#[tauri::command]
+#[specta::specta]
+pub async fn capture_ticket(app: AppHandle, db: State<'_, Db>, title: String) -> CmdResult<Ticket> {
+    let input = NewTicket { board_id: None, project_id: None, title, status: Status::Backlog, priority: Priority::None };
+    let ticket = store::create_ticket(&mut *db.0.lock().map_err(err)?, input)?;
+    capture::hide(&app);
+    app.emit_to("main", capture::CAPTURED_EVENT, &ticket).map_err(err)?;
+    Ok(ticket)
+}
+
+/// Hides the quick capture box.
+#[tauri::command]
+#[specta::specta]
+pub async fn close_capture(app: AppHandle) {
+    capture::hide(&app);
 }
 
 /// A ticket's attachments, oldest first.

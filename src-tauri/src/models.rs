@@ -285,10 +285,14 @@ pub struct Settings {
     pub show_backlog: bool,
     /// Shows when each ticket was created on board cards.
     pub show_created: bool,
+    /// Opens the quick capture box from any app with the capture shortcut.
+    pub quick_capture: bool,
+    /// In the global shortcut plugin's format, e.g. `Alt+Space`.
+    pub capture_shortcut: String,
 }
 
 impl Settings {
-    pub const COLUMNS: &'static str = "auto_archive, archive_after_days, show_canceled, show_backlog, show_created";
+    pub const COLUMNS: &'static str = "auto_archive, archive_after_days, show_canceled, show_backlog, show_created, quick_capture, capture_shortcut";
 
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Self {
@@ -297,6 +301,8 @@ impl Settings {
             show_canceled: row.get(2)?,
             show_backlog: row.get(3)?,
             show_created: row.get(4)?,
+            quick_capture: row.get(5)?,
+            capture_shortcut: row.get(6)?,
         })
     }
 }

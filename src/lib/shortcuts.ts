@@ -81,3 +81,49 @@ export function useShortcuts(map: ShortcutMap, enabled = true) {
     };
   }, [enabled]);
 }
+
+// Global shortcuts (quick capture) are in the global shortcut plugin's format: modifiers then a
+// `KeyboardEvent.code`, e.g. `Alt+Space` or `Super+Shift+KeyJ`.
+
+const MODIFIER_KEYS = /^(Meta|Control|Alt|Shift|OS)(Left|Right)?$|^(CapsLock|Fn)$/;
+
+/** The global shortcut a key press makes, or `null` until a key is pressed with ⌘, ⌃ or ⌥. */
+export function globalShortcut(e: KeyboardEvent): string | null {
+  if (!(e.metaKey || e.ctrlKey || e.altKey) || MODIFIER_KEYS.test(e.code)) return null;
+  const parts = [e.ctrlKey && "Control", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Super", e.code];
+  return parts.filter(Boolean).join("+");
+}
+
+const KEY_LABELS: Record<string, string> = {
+  Control: "⌃",
+  Alt: "⌥",
+  Shift: "⇧",
+  Super: "⌘",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+  Enter: "↵",
+  Backspace: "⌫",
+  Tab: "⇥",
+  Escape: "Esc",
+  Minus: "-",
+  Equal: "=",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Backquote: "`",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+};
+
+/** `Alt+Space` → `⌥ Space`, spaced like the keys on the shortcut sheet. */
+export function formatShortcut(shortcut: string) {
+  return shortcut
+    .split("+")
+    .map((part) => KEY_LABELS[part] ?? part.replace(/^(Key|Digit)/, ""))
+    .join(" ");
+}

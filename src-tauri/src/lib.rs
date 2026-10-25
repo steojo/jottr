@@ -1,3 +1,4 @@
+mod capture;
 mod commands;
 mod db;
 mod models;
@@ -51,6 +52,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::restore_ticket,
             commands::get_settings,
             commands::update_settings,
+            commands::capture_ticket,
+            commands::close_capture,
             commands::list_attachments,
             commands::add_attachments,
             commands::add_attachment_data,
@@ -81,13 +84,26 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::default().with_state_flags(WINDOW_STATE).build())
-        // The plugin only saves on quit. Saving when Jottr loses focus too means a crash, or
-        // `tauri dev` restarting the app, still reopens the window where you left it.
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Focused(false) = event {
+        .plugin(capture::plugin())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(WINDOW_STATE)
+                // Quick capture places itself each time it opens.
+                .with_denylist(&[capture::LABEL])
+                .build(),
+        )
+        .on_window_event(|window, event| match event {
+            // Clicking anywhere else puts quick capture away, keeping what you typed.
+            tauri::WindowEvent::Focused(false) if window.label() == capture::LABEL => capture::hide(window.app_handle()),
+            // The plugin only saves on quit. Saving when Jottr loses focus too means a crash, or
+            // `tauri dev` restarting the app, still reopens the window where you left it.
+            tauri::WindowEvent::Focused(false) => {
                 let _ = window.app_handle().save_window_state(WINDOW_STATE);
             }
+            // Closing the main window quits, as before quick capture: its hidden window would
+            // otherwise keep Jottr running with nothing to show.
+            tauri::WindowEvent::CloseRequested { .. } if window.label() == "main" => window.app_handle().exit(0),
+            _ => {}
         })
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
@@ -98,6 +114,7 @@ pub fn run() {
             if let Err(e) = store::auto_archive(&conn) {
                 eprintln!("auto-archive failed: {e}");
             }
+            capture::setup(app.handle(), &store::get_settings(&conn)?);
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(db::AttachmentsDir(dir.join("attachments")));
             Ok(())

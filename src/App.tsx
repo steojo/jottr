@@ -22,6 +22,7 @@ import {
   useAddAttachments,
   useArchive,
   useAutoArchive,
+  useCapturedTickets,
   useBoards,
   useCreateProject,
   useDeleteBoard,
@@ -96,6 +97,7 @@ function App() {
   const restoreTicket = useRestoreTicket();
   const addAttachments = useAddAttachments();
   useAutoArchive();
+  useCapturedTickets();
   const createProject = useCreateProject();
   const renameProject = useRenameProject();
   const deleteProject = useDeleteProject();

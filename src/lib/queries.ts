@@ -1,4 +1,5 @@
 import { keepPreviousData, MutationCache, QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 
 import {
@@ -519,6 +520,21 @@ export function useAutoArchive() {
       });
     }, AUTO_ARCHIVE_EVERY_MS);
     return () => clearInterval(timer);
+  }, [qc]);
+}
+
+/**
+ * Quick capture runs in its own window, so Rust sends each ticket it adds (`ticket-captured`)
+ * for the Inbox to show at once.
+ */
+export function useCapturedTickets() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const unlisten = listen<Ticket>("ticket-captured", ({ payload }) => {
+      storeCachedTicket(qc, payload);
+      for (const queryKey of [["focus"], ["search"]]) void qc.invalidateQueries({ queryKey });
+    });
+    return () => void unlisten.then((stop) => stop());
   }, [qc]);
 }
 
