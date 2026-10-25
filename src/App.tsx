@@ -1,7 +1,7 @@
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import type { Label, Project, Status, Ticket } from "./bindings";
+import type { Board as BoardData, Label, Project, Status, Ticket } from "./bindings";
 import { Board } from "./components/Board";
 import { CommandMenu, type Command } from "./components/CommandMenu";
 import { CreateBoardDialog } from "./components/CreateBoardDialog";
@@ -14,7 +14,7 @@ import type { NotesHandle } from "./components/NotesEditor";
 import { Picker } from "./components/Picker";
 import { SettingsPage } from "./components/Settings";
 import { ShortcutSheet } from "./components/ShortcutSheet";
-import { Sidebar, type View } from "./components/Sidebar";
+import { Sidebar, type SidebarAction, type SidebarScope, type View } from "./components/Sidebar";
 import { TicketList } from "./components/TicketList";
 import { TicketPage } from "./components/TicketPage";
 import {
@@ -24,6 +24,7 @@ import {
   useAutoArchive,
   useBoards,
   useCreateProject,
+  useDeleteBoard,
   useDeleteProject,
   useDeleteTicket,
   useFocus,
@@ -31,6 +32,8 @@ import {
   useMoveTicket,
   useProjects,
   useRenameProject,
+  useReorderBoard,
+  useReorderProject,
   useRestoreTicket,
   useSettings,
   useTickets,
@@ -64,6 +67,9 @@ function App() {
   // Status for the new ticket; `null` when the dialog is closed.
   const [creating, setCreating] = useState<Status | null>(null);
   const [creatingBoard, setCreatingBoard] = useState(false);
+  const [editingBoard, setEditingBoard] = useState<BoardData | null>(null);
+  const [deletingBoard, setDeletingBoard] = useState<BoardData | null>(null);
+  const [managing, setManaging] = useState<SidebarScope | null>(null);
   const [switchingBoard, setSwitchingBoard] = useState(false);
   const [switchingProject, setSwitchingProject] = useState(false);
   const [filtering, setFiltering] = useState(false);
@@ -93,6 +99,9 @@ function App() {
   const createProject = useCreateProject();
   const renameProject = useRenameProject();
   const deleteProject = useDeleteProject();
+  const deleteBoard = useDeleteBoard();
+  const reorderBoard = useReorderBoard();
+  const reorderProject = useReorderProject();
   const removeTicket = useDeleteTicket();
   const move = useMoveTicket();
   // Each board remembers list or board layout; the Inbox and My Focus are always lists.
@@ -285,6 +294,40 @@ function App() {
     view.kind === "board" && (showNotes ? setNotesOpen(false) : setLayout(showBoard ? "list" : "board"));
   const toggleSettings = () => navigate(view.kind === "settings" ? settingsReturn.current : { kind: "settings" });
 
+  function boardActions(b: BoardData): SidebarAction[] {
+    return [
+      { value: "edit-board", label: "Edit board…", run: () => setEditingBoard(b) },
+      { value: "new-project", label: "New project…", run: () => setNaming({ boardId: b.id }) },
+      { value: "delete-board", label: "Delete board…", destructive: true, run: () => setDeletingBoard(b) },
+    ];
+  }
+
+  function projectActions(p: Project): SidebarAction[] {
+    return [
+      { value: "edit-project", label: "Edit project…", run: () => setNaming({ project: p }) },
+      { value: "delete-project", label: "Delete project…", destructive: true, run: () => setDeleting(p) },
+    ];
+  }
+
+  function saveSidebarOrder(kind: "board" | "project", id: string, beforeId: string | null) {
+    const mutation = kind === "board" ? reorderBoard : reorderProject;
+    if (!mutation.isPending) mutation.mutate({ id, beforeId }, { onError: (e) => setToast(String(e)) });
+  }
+
+  function reorderScope(direction: -1 | 1) {
+    if (!board) return;
+    const peers = project ? projects.filter((p) => p.boardId === board.id) : boards;
+    const id = project?.id ?? board.id;
+    const index = peers.findIndex((item) => item.id === id);
+    if (index + direction < 0 || index + direction >= peers.length) return;
+    const beforeId = direction === -1 ? peers[index - 1].id : (peers[index + 2]?.id ?? null);
+    saveSidebarOrder(project ? "project" : "board", id, beforeId);
+  }
+
+  const managedBoard = boards.find((b) => b.id === managing?.boardId);
+  const managedProject = projects.find((p) => p.id === managing?.projectId);
+  const managementActions = managedProject ? projectActions(managedProject) : managedBoard ? boardActions(managedBoard) : [];
+
   useShortcuts({
     c: () => setCreating(newStatus),
     "mod+k": () => setCommandMenu("all"),
@@ -306,6 +349,9 @@ function App() {
     "g a": () => navigate({ kind: "archive" }),
     "g b": () => boards.length > 0 && setSwitchingBoard(true),
     "g p": () => projects.some((p) => p.boardId === board?.id) && setSwitchingProject(true),
+    "g m": () => board && setManaging({ boardId: board.id, projectId: project?.id }),
+    "mod+alt+arrowup": () => reorderScope(-1),
+    "mod+alt+arrowdown": () => reorderScope(1),
     "mod+\\": () => setSidebarOpen((o) => !o),
     "mod+b": toggleLayout,
     "mod+,": toggleSettings,
@@ -345,6 +391,18 @@ function App() {
       icon: <PlusIcon />,
       run: () => setNaming({ boardId: board.id }),
     });
+    commands.push({
+      id: "manage", label: `Manage ${project ? "project" : "board"}…`, group: project?.name ?? board.name,
+      shortcut: "G M", run: () => setManaging({ boardId: board.id, projectId: project?.id }),
+    });
+    for (const action of boardActions(board).filter((a) => a.value !== "new-project")) {
+      commands.push({ id: action.value, label: action.label, group: board.name, run: action.run });
+    }
+    if (project) {
+      for (const action of projectActions(project)) {
+        commands.push({ id: action.value, label: action.label, group: project.name, run: action.run });
+      }
+    }
   }
   commands.push(
     { id: "go-inbox", label: "Go to Inbox", group: "Go to", shortcut: "G I", run: () => navigate({ kind: "inbox" }) },
@@ -479,8 +537,11 @@ function App() {
           onNavigate={navigate}
           onNewBoard={() => setCreatingBoard(true)}
           onNewProject={(boardId) => setNaming({ boardId })}
-          onRenameProject={(p) => setNaming({ project: p })}
-          onDeleteProject={setDeleting}
+          onManage={setManaging}
+          boardActions={boardActions}
+          projectActions={projectActions}
+          onReorder={saveSidebarOrder}
+          reordering={reorderBoard.isPending || reorderProject.isPending}
         />
       )}
 
@@ -682,9 +743,18 @@ function App() {
         onCreated={(ticket) => setActiveId(ticket.id)}
       />
       <CreateBoardDialog
-        open={creatingBoard}
-        onClose={() => setCreatingBoard(false)}
+        open={creatingBoard || editingBoard !== null}
+        board={editingBoard ?? undefined}
+        onClose={() => { setCreatingBoard(false); setEditingBoard(null); }}
         onCreated={(created) => navigate({ kind: "board", boardId: created.id })}
+      />
+      <Picker
+        open={managing !== null && managedBoard !== undefined}
+        onOpenChange={(open) => !open && setManaging(null)}
+        title={managedProject ? "Manage project" : "Manage board"}
+        context={managedProject?.name ?? managedBoard?.name}
+        options={managementActions}
+        onSelect={(value) => managementActions.find((action) => action.value === value)?.run()}
       />
       <Picker
         open={switchingBoard}
@@ -710,7 +780,7 @@ function App() {
       />
       <NameDialog
         open={naming !== null}
-        title={naming && "project" in naming ? "Rename project" : "New project"}
+        title={naming && "project" in naming ? "Edit project" : "New project"}
         placeholder="Project name"
         initial={naming && "project" in naming ? naming.project.name : ""}
         onClose={() => setNaming(null)}
@@ -733,13 +803,39 @@ function App() {
       <ConfirmDialog
         open={deleting !== null}
         title={`Delete ${deleting?.name ?? "project"}?`}
-        message="Its tickets stay on the board, just without a project."
+        message="Its tickets stay on the board, just without a project. Its notes will be deleted."
         confirmLabel="Delete"
         onClose={() => setDeleting(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!deleting) return;
-          deleteProject.mutate(deleting.id);
+          await deleteProject.mutateAsync(deleting.id);
+          setFilters((f) => ({ ...f, projectIds: f.projectIds.filter((id) => id !== deleting.id) }));
+          if (settingsReturn.current.kind === "board" && settingsReturn.current.projectId === deleting.id) {
+            settingsReturn.current = { kind: "board", boardId: deleting.boardId };
+          }
           if (project?.id === deleting.id) navigate({ kind: "board", boardId: deleting.boardId });
+        }}
+      />
+      <ConfirmDialog
+        open={deletingBoard !== null}
+        title={`Delete ${deletingBoard?.name ?? "board"}?`}
+        message="Its tickets move to Inbox, including archived tickets, which stay archived. Its projects, labels, and notes will be deleted."
+        confirmLabel="Delete board"
+        onClose={() => setDeletingBoard(null)}
+        onConfirm={async () => {
+          if (!deletingBoard) return;
+          await deleteBoard.mutateAsync(deletingBoard.id);
+          setExpanded((ids) => ids.filter((id) => id !== deletingBoard.id));
+          setFilters((f) => ({
+            ...f,
+            labelIds: f.labelIds.filter((id) => !allLabels?.some((label) => label.id === id && label.boardId === deletingBoard.id)),
+            projectIds: f.projectIds.filter((id) => !projects.some((p) => p.id === id && p.boardId === deletingBoard.id)),
+          }));
+          if (settingsReturn.current.kind === "board" && settingsReturn.current.boardId === deletingBoard.id) {
+            settingsReturn.current = { kind: "inbox" };
+          }
+          if (view.kind === "board" && view.boardId === deletingBoard.id) navigate({ kind: "inbox" });
+          else if (openTicket?.boardId === deletingBoard.id) setOpenId(null);
         }}
       />
     </div>

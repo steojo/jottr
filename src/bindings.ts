@@ -6,11 +6,15 @@ import { invoke as __TAURI_INVOKE } from "@tauri-apps/api/core";
 export const commands = {
 	listBoards: () => __TAURI_INVOKE<Board[]>("list_boards"),
 	createBoard: (input: NewBoard) => __TAURI_INVOKE<Board>("create_board", { input }),
+	updateBoard: (id: string, input: NewBoard) => __TAURI_INVOKE<Board>("update_board", { id, input }),
+	deleteBoard: (id: string) => __TAURI_INVOKE<null>("delete_board", { id }),
+	reorderBoard: (id: string, beforeId: string | null) => __TAURI_INVOKE<null>("reorder_board", { id, beforeId }),
 	listProjects: () => __TAURI_INVOKE<Project[]>("list_projects"),
 	createProject: (boardId: string, name: string) => __TAURI_INVOKE<Project>("create_project", { boardId, name }),
 	renameProject: (id: string, name: string) => __TAURI_INVOKE<Project>("rename_project", { id, name }),
 	/**  The project's tickets stay on the board, without a project. */
 	deleteProject: (id: string) => __TAURI_INVOKE<null>("delete_project", { id }),
+	reorderProject: (id: string, beforeId: string | null) => __TAURI_INVOKE<null>("reorder_project", { id, beforeId }),
 	/**  Notes on a project, or on the board itself when `project_id` is `null`. */
 	getNotes: (boardId: string, projectId: string | null) => __TAURI_INVOKE<string>("get_notes", { boardId, projectId }),
 	setNotes: (boardId: string, projectId: string | null, notes: string) => __TAURI_INVOKE<null>("set_notes", { boardId, projectId, notes }),

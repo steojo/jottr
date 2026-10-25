@@ -21,6 +21,30 @@ pub async fn create_board(db: State<'_, Db>, input: NewBoard) -> CmdResult<Board
     store::create_board(&*db.0.lock().map_err(err)?, input)
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn update_board(db: State<'_, Db>, id: String, input: NewBoard) -> CmdResult<Board> {
+    store::update_board(&*db.0.lock().map_err(err)?, id, input)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_board(db: State<'_, Db>, id: String) -> CmdResult<()> {
+    store::delete_board(&mut *db.0.lock().map_err(err)?, id)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reorder_board(db: State<'_, Db>, id: String, before_id: Option<String>) -> CmdResult<()> {
+    store::reorder_board(&mut *db.0.lock().map_err(err)?, id, before_id)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn reorder_project(db: State<'_, Db>, id: String, before_id: Option<String>) -> CmdResult<()> {
+    store::reorder_project(&mut *db.0.lock().map_err(err)?, id, before_id)
+}
+
 /// Tickets on a board, or in the Inbox when `board_id` is `None`.
 #[tauri::command]
 #[specta::specta]

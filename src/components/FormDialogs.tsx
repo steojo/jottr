@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Dialog, Kbd } from "./ui";
 
@@ -99,41 +99,60 @@ export function ConfirmDialog({
   message: string;
   confirmLabel: string;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => unknown;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) setError(null);
+  }, [open]);
+
+  async function confirm() {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onConfirm();
+      onClose();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <Dialog
       open={open}
-      onOpenChange={(o) => !o && onClose()}
+      onOpenChange={(o) => !o && !saving && onClose()}
       title={title}
       width="w-[400px]"
       focusContent
       onKeyDown={(e) => {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "BUTTON") {
           e.preventDefault();
-          onClose();
-          onConfirm();
+          void confirm();
         }
       }}
     >
       <div className="flex flex-col gap-1.5 px-4 pt-4 pb-3">
         <p className="font-medium">{title}</p>
         <p className="text-fg-secondary">{message}</p>
+        {error && <p role="alert" className="text-status-error">{error}</p>}
       </div>
       <div className="flex h-11 items-center justify-end gap-2 border-t border-line-subtle px-3">
         <button
           type="button"
           onClick={onClose}
+          disabled={saving}
           className="flex h-7 items-center gap-1.5 rounded-md px-2 text-fg-tertiary hover:bg-surface-hover hover:text-fg"
         >
           Cancel <Kbd>Esc</Kbd>
         </button>
         <button
           type="button"
-          onClick={() => {
-            onClose();
-            onConfirm();
-          }}
+          onClick={() => void confirm()}
+          disabled={saving}
           className="flex h-7 items-center gap-1.5 rounded-md bg-status-error px-2.5 font-medium text-on-accent hover:opacity-90"
         >
           {confirmLabel} <Kbd>↵</Kbd>

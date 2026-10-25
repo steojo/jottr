@@ -127,6 +127,14 @@ export function ChevronRightIcon() {
   );
 }
 
+export function MoreIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" className="shrink-0" aria-hidden="true">
+      {[2, 6, 10].map((x) => <circle key={x} cx={x} cy="6" r="1" fill="currentColor" />)}
+    </svg>
+  );
+}
+
 export function ChevronUpDownIcon({ direction }: { direction: "up" | "down" }) {
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" className="shrink-0">

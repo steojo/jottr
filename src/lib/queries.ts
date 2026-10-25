@@ -4,12 +4,14 @@ import { useEffect } from "react";
 import {
   commands,
   type Attachment,
+  type Board,
   type ChecklistItem,
   type ChecklistPatch,
   type Color,
   type LabelPatch,
   type NewBoard,
   type NewTicket,
+  type Project,
   type Settings,
   type Status,
   type Ticket,
@@ -47,6 +49,85 @@ export function useCreateBoard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: boardsKey }),
   });
 }
+
+export function useUpdateBoard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: NewBoard }) => commands.updateBoard(id, input),
+    onMutate: async ({ id, input }) => {
+      await qc.cancelQueries({ queryKey: boardsKey });
+      const previous = qc.getQueryData<Board[]>(boardsKey);
+      qc.setQueryData<Board[]>(boardsKey, (list) => list?.map((b) => (b.id === id ? { ...b, ...input } : b)));
+      return { previous };
+    },
+    onError: (_error, _vars, ctx) => qc.setQueryData(boardsKey, ctx?.previous),
+    onSuccess: (board) => {
+      qc.setQueryData<Board[]>(boardsKey, (list) => list?.map((b) => (b.id === board.id ? board : b)));
+      // Keep cached board tickets in step; the mutation cache refreshes cross-board views.
+      qc.setQueriesData<Ticket[]>({ queryKey: ["tickets"] }, (list) =>
+        list?.map((t) => (t.boardId === board.id ? { ...t, boardKey: board.key } : t)),
+      );
+    },
+  });
+}
+
+/** Tickets are preserved in the Inbox; projects, labels, and notes belong to the deleted board. */
+export function useDeleteBoard() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => commands.deleteBoard(id),
+    onSuccess: async (_result, id) => {
+      qc.setQueryData<Board[]>(boardsKey, (list) => list?.filter((b) => b.id !== id));
+      qc.removeQueries({ queryKey: ticketsKey(id) });
+      qc.removeQueries({ queryKey: ["notes", id] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: projectsKey }),
+        qc.invalidateQueries({ queryKey: labelsKey }),
+        qc.invalidateQueries({ queryKey: ticketsKey(null) }),
+      ]);
+    },
+  });
+}
+
+type ReorderInput = { id: string; beforeId: string | null };
+
+/** Both sidebar lists update immediately. Rust keeps project moves within their board. */
+function useReorderSidebar<T extends { id: string }>(
+  key: readonly string[],
+  save: (id: string, beforeId: string | null) => Promise<unknown>,
+  sameGroup: (a: T, b: T) => boolean,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationKey: key,
+    scope: { id: key[0] },
+    mutationFn: ({ id, beforeId }: ReorderInput) => save(id, beforeId),
+    onMutate: async ({ id, beforeId }) => {
+      await qc.cancelQueries({ queryKey: key });
+      const previous = qc.getQueryData<T[]>(key);
+      qc.setQueryData<T[]>(key, (list) => {
+        if (!list) return list;
+        const moved = list.find((item) => item.id === id);
+        if (!moved || beforeId === id) return list;
+        const peers = list.filter((item) => sameGroup(item, moved) && item.id !== id);
+        const next = beforeId === null ? peers.length : peers.findIndex((item) => item.id === beforeId);
+        if (next < 0) return list;
+        peers.splice(next, 0, moved);
+        let index = 0;
+        return list.map((item) => (sameGroup(item, moved) ? peers[index++] : item));
+      });
+      return { previous };
+    },
+    onError: (_error, _vars, ctx) => qc.setQueryData(key, ctx?.previous),
+    onSettled: () => {
+      if (qc.isMutating({ mutationKey: key }) === 1) return qc.invalidateQueries({ queryKey: key });
+    },
+  });
+}
+
+export const useReorderBoard = () => useReorderSidebar<Board>(boardsKey, commands.reorderBoard, () => true);
+export const useReorderProject = () =>
+  useReorderSidebar<Project>(projectsKey, commands.reorderProject, (a, b) => a.boardId === b.boardId);
 
 /** Tickets on a board, or in the Inbox when `boardId` is `null`. */
 export function useTickets(boardId: string | null) {
@@ -161,7 +242,14 @@ export function useRenameProject() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => commands.renameProject(id, name),
-    onSuccess: () => qc.invalidateQueries({ queryKey: projectsKey }),
+    onMutate: async ({ id, name }) => {
+      await qc.cancelQueries({ queryKey: projectsKey });
+      const previous = qc.getQueryData<Project[]>(projectsKey);
+      qc.setQueryData<Project[]>(projectsKey, (list) => list?.map((p) => (p.id === id ? { ...p, name: name.trim() } : p)));
+      return { previous };
+    },
+    onError: (_error, _vars, ctx) => qc.setQueryData(projectsKey, ctx?.previous),
+    onSuccess: (project) => qc.setQueryData<Project[]>(projectsKey, (list) => list?.map((p) => (p.id === project.id ? project : p))),
   });
 }
 
@@ -170,9 +258,12 @@ export function useDeleteProject() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => commands.deleteProject(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: projectsKey });
-      qc.invalidateQueries({ queryKey: ["tickets"] });
+    onSuccess: async (_result, id) => {
+      qc.removeQueries({ predicate: (query) => query.queryKey[0] === "notes" && query.queryKey[2] === id });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: projectsKey }),
+        qc.invalidateQueries({ queryKey: ["tickets"] }),
+      ]);
     },
   });
 }

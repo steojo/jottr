@@ -105,6 +105,15 @@ pub fn list_boards(conn: &Connection) -> CmdResult<Vec<Board>> {
 }
 
 pub fn create_board(conn: &Connection, input: NewBoard) -> CmdResult<Board> {
+    save_board(conn, None, input)
+}
+
+pub fn update_board(conn: &Connection, id: String, input: NewBoard) -> CmdResult<Board> {
+    get_board(conn, &id)?;
+    save_board(conn, Some(&id), input)
+}
+
+fn save_board(conn: &Connection, id: Option<&str>, input: NewBoard) -> CmdResult<Board> {
     let name = input.name.trim();
     if name.is_empty() {
         return Err("Board name can't be empty".into());
@@ -115,10 +124,19 @@ pub fn create_board(conn: &Connection, input: NewBoard) -> CmdResult<Board> {
     }
 
     let taken: bool = conn
-        .query_row("SELECT EXISTS(SELECT 1 FROM boards WHERE key = ?1)", [&key], |row| row.get(0))
+        .query_row("SELECT EXISTS(SELECT 1 FROM boards WHERE key = ?1 AND id IS NOT ?2)", params![key, id], |row| row.get(0))
         .map_err(err)?;
     if taken {
         return Err(format!("A board with the key {key} already exists"));
+    }
+
+    if let Some(id) = id {
+        conn.execute(
+            "UPDATE boards SET name = ?2, key = ?3, color = ?4, updated_at = ?5 WHERE id = ?1",
+            params![id, name, key, input.color, now()],
+        )
+        .map_err(err)?;
+        return get_board(conn, id);
     }
 
     let position: f64 = conn
@@ -132,6 +150,57 @@ pub fn create_board(conn: &Connection, input: NewBoard) -> CmdResult<Board> {
     )
     .map_err(err)?;
     get_board(conn, &id)
+}
+
+/// Keeps tickets (including archived ones and their files) when removing a board.
+pub fn delete_board(conn: &mut Connection, id: String) -> CmdResult<()> {
+    let tx = conn.transaction().map_err(err)?;
+    get_board(&tx, &id)?;
+    // Move each status group above the Inbox's existing tickets, keeping its order.
+    tx.execute(
+        "WITH moved AS MATERIALIZED (
+            SELECT t.id, ROW_NUMBER() OVER (PARTITION BY t.status ORDER BY t.position, t.id) AS ordinal,
+                   COUNT(*) OVER (PARTITION BY t.status) AS total,
+                   COALESCE((SELECT MIN(i.position) FROM tickets i
+                             WHERE i.board_id IS NULL AND i.status = t.status AND i.archived_at IS NULL), 0) AS top
+            FROM tickets t WHERE t.board_id = ?1
+         )
+         UPDATE tickets SET board_id = NULL, project_id = NULL, number = NULL, updated_at = ?2,
+             position = (SELECT top - total + ordinal - 1 FROM moved WHERE moved.id = tickets.id)
+         WHERE board_id = ?1",
+        params![id, now()],
+    )
+    .map_err(err)?;
+    // Projects, labels (and their ticket associations), and notes cascade with the board.
+    tx.execute("DELETE FROM boards WHERE id = ?1", [&id]).map_err(err)?;
+    tx.commit().map_err(err)
+}
+
+pub fn reorder_board(conn: &mut Connection, id: String, before_id: Option<String>) -> CmdResult<()> {
+    let ids = list_boards(conn)?.into_iter().map(|b| b.id).collect();
+    reorder_sidebar(conn, "boards", ids, &id, before_id.as_deref())
+}
+
+/// Only called with our two fixed table names. Reindexing avoids equal/fractional positions.
+fn reorder_sidebar(conn: &mut Connection, table: &str, mut ids: Vec<String>, id: &str, before_id: Option<&str>) -> CmdResult<()> {
+    let index = ids.iter().position(|item| item == id).ok_or("Board or project not found")?;
+    if before_id == Some(id) {
+        return Ok(());
+    }
+    let moved = ids.remove(index);
+    let next = match before_id {
+        Some(before) => ids.iter().position(|item| item == before).ok_or("Drop target not found in this list")?,
+        None => ids.len(),
+    };
+    ids.insert(next, moved);
+    let tx = conn.transaction().map_err(err)?;
+    {
+        let mut stmt = tx.prepare(&format!("UPDATE {table} SET position = ?2 WHERE id = ?1")).map_err(err)?;
+        for (position, id) in ids.iter().enumerate() {
+            stmt.execute(params![id, position as f64]).map_err(err)?;
+        }
+    }
+    tx.commit().map_err(err)
 }
 
 /// Tickets on a board, or in the Inbox when `board_id` is `None`.
@@ -467,8 +536,21 @@ pub fn rename_project(conn: &Connection, id: String, name: String) -> CmdResult<
 
 /// The project's tickets stay on the board, without a project.
 pub fn delete_project(conn: &Connection, id: String) -> CmdResult<()> {
-    conn.execute("DELETE FROM projects WHERE id = ?1", [id]).map_err(err)?;
+    let deleted = conn.execute("DELETE FROM projects WHERE id = ?1", [id]).map_err(err)?;
+    if deleted == 0 {
+        return Err("Project not found".into());
+    }
     Ok(())
+}
+
+pub fn reorder_project(conn: &mut Connection, id: String, before_id: Option<String>) -> CmdResult<()> {
+    let project = get_project(conn, &id)?;
+    let ids = list_projects(conn)?
+        .into_iter()
+        .filter(|p| p.board_id == project.board_id)
+        .map(|p| p.id)
+        .collect();
+    reorder_sidebar(conn, "projects", ids, &id, before_id.as_deref())
 }
 
 pub fn list_labels(conn: &Connection) -> CmdResult<Vec<Label>> {
@@ -987,6 +1069,121 @@ mod tests {
     fn set_status(conn: &mut Connection, t: &Ticket, status: Status) -> Ticket {
         let patch = TicketPatch { title: None, description: None, status: Some(status), priority: None };
         update_ticket(conn, t.id.clone(), patch).unwrap()
+    }
+
+    #[test]
+    fn editing_boards_validates_keys_and_keeps_ticket_numbers() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let ops = board(&conn, "OPS");
+        let t = ticket(&mut conn, Some(&eng.id), Status::Ready);
+        let input = |name: &str, key: &str| NewBoard { name: name.into(), key: key.into(), color: Color::Green };
+        let saved = update_board(&conn, eng.id.clone(), input(" Engineering ", "dev")).unwrap();
+        assert_eq!((saved.name.as_str(), saved.key.as_str(), saved.color), ("Engineering", "DEV", Color::Green));
+        let kept = get_ticket(&conn, &t.id).unwrap();
+        assert_eq!((kept.board_key.as_deref(), kept.number), (Some("DEV"), Some(1)));
+        assert_eq!(ticket(&mut conn, Some(&eng.id), Status::Ready).number, Some(2));
+        assert_eq!(search_tickets(&conn, "DEV-1".into()).unwrap()[0].id, t.id);
+        assert!(update_board(&conn, eng.id.clone(), input("Changed", &ops.key)).is_err());
+        assert!(update_board(&conn, eng.id.clone(), input(" ", "DEV")).is_err());
+        assert!(update_board(&conn, eng.id.clone(), input("Changed", "1DEV")).is_err());
+        assert!(update_board(&conn, "missing".into(), input("Changed", "DEV")).is_err());
+        assert_eq!(get_board(&conn, &eng.id).unwrap().name, "Engineering", "invalid edits leave the board alone");
+        update_board(&conn, eng.id, input("Engineering", "DEV")).unwrap();
+    }
+
+    #[test]
+    fn sidebar_order_is_saved_and_projects_stay_on_their_board() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let ops = board(&conn, "OPS");
+        let life = board(&conn, "LIFE");
+        let board_ids = |conn: &Connection| list_boards(conn).unwrap().into_iter().map(|b| b.id).collect::<Vec<_>>();
+        reorder_board(&mut conn, life.id.clone(), Some(eng.id.clone())).unwrap();
+        assert_eq!(board_ids(&conn), [life.id.clone(), eng.id.clone(), ops.id.clone()]);
+        reorder_board(&mut conn, eng.id.clone(), None).unwrap();
+        reorder_board(&mut conn, life.id.clone(), Some(life.id.clone())).unwrap();
+        reorder_board(&mut conn, eng.id.clone(), None).unwrap();
+        assert!(reorder_board(&mut conn, eng.id.clone(), Some("missing".into())).is_err());
+        assert!(reorder_board(&mut conn, "missing".into(), None).is_err());
+        let new = board(&conn, "NEW");
+        assert_eq!(board_ids(&conn), [life.id, ops.id.clone(), eng.id.clone(), new.id]);
+
+        let a = create_project(&conn, eng.id.clone(), "A".into()).unwrap();
+        let b = create_project(&conn, eng.id.clone(), "B".into()).unwrap();
+        let c = create_project(&conn, eng.id.clone(), "C".into()).unwrap();
+        let d = create_project(&conn, eng.id.clone(), "D".into()).unwrap();
+        let other = create_project(&conn, ops.id.clone(), "Other".into()).unwrap();
+        reorder_project(&mut conn, d.id.clone(), Some(a.id.clone())).unwrap();
+        reorder_project(&mut conn, a.id.clone(), None).unwrap();
+        reorder_project(&mut conn, c.id.clone(), Some(b.id.clone())).unwrap();
+        reorder_project(&mut conn, b.id.clone(), Some(b.id.clone())).unwrap();
+        assert!(reorder_project(&mut conn, a.id.clone(), Some(other.id.clone())).is_err(), "another board's project");
+        assert!(reorder_project(&mut conn, a.id.clone(), Some("missing".into())).is_err());
+        assert!(reorder_project(&mut conn, "missing".into(), None).is_err());
+        let projects = list_projects(&conn).unwrap();
+        let eng_ids: Vec<_> = projects.iter().filter(|p| p.board_id == eng.id).map(|p| p.id.as_str()).collect();
+        assert_eq!(eng_ids, [d.id.as_str(), c.id.as_str(), b.id.as_str(), a.id.as_str()]);
+        assert_eq!(get_project(&conn, &other.id).unwrap().board_id, ops.id);
+    }
+
+    #[test]
+    fn deleting_a_board_keeps_tickets_archive_checklists_and_files() {
+        let mut conn = db();
+        let root = temp_root();
+        let eng = board(&conn, "ENG");
+        let ops = board(&conn, "OPS");
+        let project = create_project(&conn, eng.id.clone(), "Launch".into()).unwrap();
+        let label = create_label(&conn, eng.id.clone(), "Bug".into(), Color::Red).unwrap();
+        let other_label = create_label(&conn, ops.id.clone(), "Keep".into(), Color::Blue).unwrap();
+        let existing = ticket(&mut conn, None, Status::Ready);
+        let first = ticket(&mut conn, Some(&eng.id), Status::Ready);
+        let second = ticket(&mut conn, Some(&eng.id), Status::Ready);
+        let archived = ticket(&mut conn, Some(&eng.id), Status::Done);
+        finished_days_ago(&conn, &archived, 8);
+        auto_archive(&conn).unwrap();
+        let archived_before = get_ticket(&conn, &archived.id).unwrap();
+        let other = ticket(&mut conn, Some(&ops.id), Status::Ready);
+        move_ticket(&mut conn, first.id.clone(), Some(eng.id.clone()), Some(project.id.clone())).unwrap();
+        set_ticket_label(&conn, first.id.clone(), label.id, true).unwrap();
+        add_checklist_item(&conn, first.id.clone(), "Keep this".into()).unwrap();
+        let attachment = add_attachment_data(&conn, &root, first.id.clone(), "notes.txt".into(), BASE64.encode("hello")).unwrap();
+        set_notes(&conn, eng.id.clone(), None, "Board notes".into()).unwrap();
+        set_notes(&conn, eng.id.clone(), Some(project.id.clone()), "Project notes".into()).unwrap();
+
+        delete_board(&mut conn, eng.id.clone()).unwrap();
+        assert_eq!(list_boards(&conn).unwrap().len(), 1);
+        assert!(list_projects(&conn).unwrap().is_empty());
+        assert_eq!(list_labels(&conn).unwrap()[0].id, other_label.id);
+        assert_eq!(list_tickets(&conn, None).unwrap().iter().map(|t| &t.id).collect::<Vec<_>>(), [&first.id, &second.id, &existing.id]);
+        for id in [&first.id, &second.id, &archived.id] {
+            let kept = get_ticket(&conn, id).unwrap();
+            assert_eq!((kept.board_id, kept.board_key, kept.project_id, kept.number), (None, None, None, None));
+            assert!(kept.label_ids.is_empty());
+        }
+        let kept_archive = list_archived(&conn).unwrap();
+        assert_eq!(kept_archive[0].id, archived.id);
+        assert_eq!(kept_archive[0].archived_at, archived_before.archived_at);
+        assert_eq!(kept_archive[0].completed_at, archived_before.completed_at);
+        assert_eq!(list_checklist(&conn, first.id.clone()).unwrap().len(), 1);
+        assert_eq!(list_attachments(&conn, &root, first.id.clone()).unwrap()[0].id, attachment.id);
+        assert_eq!(fs::read_to_string(attachment.path).unwrap(), "hello");
+        assert_eq!(get_ticket(&conn, &other.id).unwrap().board_id, Some(ops.id));
+        assert_eq!(search_tickets(&conn, "Ticket".into()).unwrap().len(), 5);
+        assert!(get_notes(&conn, eng.id.clone(), None).is_err());
+        assert!(delete_board(&mut conn, eng.id).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_board_deletion_rolls_back_the_ticket_move() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let t = ticket(&mut conn, Some(&eng.id), Status::Ready);
+        conn.execute_batch("CREATE TRIGGER refuse_delete BEFORE DELETE ON boards BEGIN SELECT RAISE(ABORT, 'Refused'); END;").unwrap();
+        assert!(delete_board(&mut conn, eng.id.clone()).is_err());
+        assert_eq!(get_ticket(&conn, &t.id).unwrap().board_id, Some(eng.id));
+        assert_eq!(get_ticket(&conn, &t.id).unwrap().number, Some(1));
     }
 
     #[test]

@@ -22,7 +22,24 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
       ["G F", "My Focus"],
       ["G B", "Board…"],
       ["G P", "Project…"],
+      ["G M", "Manage board or project…"],
       ["G A", "Archive"],
+    ],
+  },
+  {
+    title: "Sidebar order",
+    keys: [
+      ["⌘ ⌥ ↑", "Move current board or project up"],
+      ["⌘ ⌥ ↓", "Move current board or project down"],
+    ],
+  },
+  {
+    title: "Board and project menu",
+    keys: [
+      ["1–9", "Choose an action"],
+      ["J  K", "Next / previous action"],
+      ["↵", "Run action"],
+      ["Esc", "Close menu"],
     ],
   },
   {
