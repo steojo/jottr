@@ -10,8 +10,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::db::{new_id, now};
 use crate::models::{
-    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Priority, Project, Settings,
-    Status, Ticket, TicketDraft, TicketPatch,
+    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Note, Priority, Project,
+    Settings, Status, Ticket, TicketDraft, TicketPatch,
 };
 
 pub type CmdResult<T> = Result<T, String>;
@@ -295,36 +295,103 @@ fn insert_ticket(conn: &Connection, input: &NewTicket, description: &str) -> Cmd
     Ok(id)
 }
 
-/// Notes on a project, or on the board itself when `project_id` is `None`.
-pub fn get_notes(conn: &Connection, board_id: String, project_id: Option<String>) -> CmdResult<String> {
-    let notes = match &project_id {
-        Some(id) => conn.query_row(
-            "SELECT notes FROM projects WHERE id = ?1 AND board_id = ?2",
-            params![id, board_id],
-            |row| row.get(0),
-        ),
-        None => conn.query_row("SELECT notes FROM boards WHERE id = ?1", [&board_id], |row| row.get(0)),
-    };
-    notes.optional().map_err(err)?.ok_or_else(|| notes_missing(&project_id))
+/// Notes on a project, or on the board itself when `project_id` is `None`, in tab order.
+/// A board or project always has at least one, so the first is made when they're first opened.
+pub fn list_notes(conn: &Connection, board_id: String, project_id: Option<String>) -> CmdResult<Vec<Note>> {
+    check_notes_scope(conn, &board_id, project_id.as_deref())?;
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {} FROM notes WHERE board_id = ?1 AND project_id IS ?2 ORDER BY position, created_at",
+            Note::COLUMNS
+        ))
+        .map_err(err)?;
+    let notes = stmt
+        .query_map(params![board_id, project_id], Note::from_row)
+        .map_err(err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(err)?;
+    if notes.is_empty() {
+        return Ok(vec![create_note(conn, board_id, project_id, "Notes".into())?]);
+    }
+    Ok(notes)
 }
 
-pub fn set_notes(conn: &Connection, board_id: String, project_id: Option<String>, notes: String) -> CmdResult<()> {
-    let changed = match &project_id {
-        Some(id) => conn.execute(
-            "UPDATE projects SET notes = ?3 WHERE id = ?1 AND board_id = ?2",
-            params![id, board_id, notes],
-        ),
-        None => conn.execute("UPDATE boards SET notes = ?2 WHERE id = ?1", params![board_id, notes]),
-    }
+/// Adds an empty note after the others.
+pub fn create_note(conn: &Connection, board_id: String, project_id: Option<String>, title: String) -> CmdResult<Note> {
+    check_notes_scope(conn, &board_id, project_id.as_deref())?;
+    let title = note_title(&title)?;
+    let id = new_id();
+    let ts = now();
+    conn.execute(
+        "INSERT INTO notes (id, board_id, project_id, title, body, position, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, '',
+                 (SELECT COALESCE(MAX(position), -1) + 1 FROM notes WHERE board_id = ?2 AND project_id IS ?3), ?5, ?5)",
+        params![id, board_id, project_id, title, ts],
+    )
     .map_err(err)?;
-    if changed == 0 {
-        return Err(notes_missing(&project_id));
+    get_note(conn, &id)
+}
+
+pub fn rename_note(conn: &Connection, id: String, title: String) -> CmdResult<Note> {
+    let title = note_title(&title)?;
+    if conn
+        .execute("UPDATE notes SET title = ?2, updated_at = ?3 WHERE id = ?1", params![id, title, now()])
+        .map_err(err)?
+        == 0
+    {
+        return Err("Note not found".into());
+    }
+    get_note(conn, &id)
+}
+
+pub fn set_note_body(conn: &Connection, id: String, body: String) -> CmdResult<()> {
+    if conn
+        .execute("UPDATE notes SET body = ?2, updated_at = ?3 WHERE id = ?1", params![id, body, now()])
+        .map_err(err)?
+        == 0
+    {
+        return Err("Note not found".into());
     }
     Ok(())
 }
 
-fn notes_missing(project_id: &Option<String>) -> String {
-    if project_id.is_some() { "Project not found" } else { "Board not found" }.into()
+/// Tickets made from the note stay where they are. The last note on a board or project can't go.
+pub fn delete_note(conn: &Connection, id: String) -> CmdResult<()> {
+    let siblings: i32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM notes o JOIN notes n ON n.id = ?1
+             WHERE o.board_id = n.board_id AND o.project_id IS n.project_id",
+            [&id],
+            |row| row.get(0),
+        )
+        .map_err(err)?;
+    match siblings {
+        0 => Err("Note not found".into()),
+        1 => Err("A board or project keeps at least one note".into()),
+        _ => conn.execute("DELETE FROM notes WHERE id = ?1", [&id]).map(|_| ()).map_err(err),
+    }
+}
+
+fn get_note(conn: &Connection, id: &str) -> CmdResult<Note> {
+    conn.query_row(&format!("SELECT {} FROM notes WHERE id = ?1", Note::COLUMNS), [id], Note::from_row)
+        .map_err(err)
+}
+
+fn note_title(title: &str) -> CmdResult<&str> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("Note name can't be empty".into());
+    }
+    Ok(title)
+}
+
+fn check_notes_scope(conn: &Connection, board_id: &str, project_id: Option<&str>) -> CmdResult<()> {
+    let board: Option<i32> =
+        conn.query_row("SELECT 1 FROM boards WHERE id = ?1", [board_id], |row| row.get(0)).optional().map_err(err)?;
+    if board.is_none() {
+        return Err("Board not found".into());
+    }
+    check_project(conn, Some(board_id), project_id)
 }
 
 pub fn update_ticket(conn: &mut Connection, id: String, patch: TicketPatch) -> CmdResult<Ticket> {
@@ -1224,8 +1291,8 @@ mod tests {
         set_ticket_label(&conn, first.id.clone(), label.id, true).unwrap();
         add_checklist_item(&conn, first.id.clone(), "Keep this".into()).unwrap();
         let attachment = add_attachment_data(&conn, &root, first.id.clone(), "notes.txt".into(), BASE64.encode("hello")).unwrap();
-        set_notes(&conn, eng.id.clone(), None, "Board notes".into()).unwrap();
-        set_notes(&conn, eng.id.clone(), Some(project.id.clone()), "Project notes".into()).unwrap();
+        list_notes(&conn, eng.id.clone(), None).unwrap();
+        create_note(&conn, eng.id.clone(), Some(project.id.clone()), "Project notes".into()).unwrap();
 
         delete_board(&mut conn, eng.id.clone()).unwrap();
         assert_eq!(list_boards(&conn).unwrap().len(), 1);
@@ -1246,7 +1313,8 @@ mod tests {
         assert_eq!(fs::read_to_string(attachment.path).unwrap(), "hello");
         assert_eq!(get_ticket(&conn, &other.id).unwrap().board_id, Some(ops.id));
         assert_eq!(search_tickets(&conn, "Ticket".into()).unwrap().len(), 5);
-        assert!(get_notes(&conn, eng.id.clone(), None).is_err());
+        assert!(list_notes(&conn, eng.id.clone(), None).is_err());
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get::<_, i32>(0)).unwrap(), 0);
         assert!(delete_board(&mut conn, eng.id).is_err());
         fs::remove_dir_all(root).unwrap();
     }
@@ -1805,16 +1873,50 @@ mod tests {
         let eng = board(&conn, "ENG");
         let ops = board(&conn, "OPS");
         let p = create_project(&conn, eng.id.clone(), "Open Source".into()).unwrap();
-        assert_eq!(get_notes(&conn, eng.id.clone(), None).unwrap(), "", "notes start empty");
+        let board_notes = list_notes(&conn, eng.id.clone(), None).unwrap();
+        assert_eq!(board_notes.len(), 1, "a board starts with one note");
+        assert_eq!((board_notes[0].title.as_str(), board_notes[0].body.as_str()), ("Notes", ""));
+        assert_eq!(list_notes(&conn, eng.id.clone(), None).unwrap()[0].id, board_notes[0].id, "only made once");
 
-        set_notes(&conn, eng.id.clone(), None, "- board idea".into()).unwrap();
-        set_notes(&conn, eng.id.clone(), Some(p.id.clone()), "- project idea".into()).unwrap();
-        assert_eq!(get_notes(&conn, eng.id.clone(), None).unwrap(), "- board idea");
-        assert_eq!(get_notes(&conn, eng.id.clone(), Some(p.id.clone())).unwrap(), "- project idea");
+        set_note_body(&conn, board_notes[0].id.clone(), "- board idea".into()).unwrap();
+        let project_note = &list_notes(&conn, eng.id.clone(), Some(p.id.clone())).unwrap()[0];
+        set_note_body(&conn, project_note.id.clone(), "- project idea".into()).unwrap();
+        assert_eq!(list_notes(&conn, eng.id.clone(), None).unwrap()[0].body, "- board idea");
+        assert_eq!(list_notes(&conn, eng.id.clone(), Some(p.id.clone())).unwrap()[0].body, "- project idea");
 
-        assert!(get_notes(&conn, ops.id.clone(), Some(p.id.clone())).is_err(), "project from another board");
-        assert!(set_notes(&conn, ops.id.clone(), Some(p.id.clone()), "x".into()).is_err());
-        assert!(set_notes(&conn, "missing".into(), None, "x".into()).is_err());
+        assert!(list_notes(&conn, ops.id.clone(), Some(p.id.clone())).is_err(), "project from another board");
+        assert!(create_note(&conn, ops.id.clone(), Some(p.id.clone()), "x".into()).is_err());
+        assert!(list_notes(&conn, "missing".into(), None).is_err());
+        assert!(set_note_body(&conn, "missing".into(), "x".into()).is_err());
+    }
+
+    #[test]
+    fn boards_and_projects_have_several_named_notes() {
+        let conn = db();
+        let eng = board(&conn, "ENG");
+        let p = create_project(&conn, eng.id.clone(), "iOS Apps".into()).unwrap();
+        let scope = || list_notes(&conn, eng.id.clone(), Some(p.id.clone())).unwrap();
+        let first = scope().remove(0);
+        let habits = create_note(&conn, eng.id.clone(), Some(p.id.clone()), "  Habit Tracker ".into()).unwrap();
+        let budget = create_note(&conn, eng.id.clone(), Some(p.id.clone()), "Budget App".into()).unwrap();
+        assert_eq!(habits.title, "Habit Tracker", "names are trimmed");
+        assert_eq!(scope().iter().map(|n| n.title.as_str()).collect::<Vec<_>>(), ["Notes", "Habit Tracker", "Budget App"]);
+        assert_eq!(list_notes(&conn, eng.id.clone(), None).unwrap().len(), 1, "the board's notes are separate");
+
+        assert_eq!(rename_note(&conn, first.id.clone(), "Shared".into()).unwrap().title, "Shared");
+        assert!(rename_note(&conn, first.id.clone(), "  ".into()).is_err());
+        assert!(create_note(&conn, eng.id.clone(), Some(p.id.clone()), "".into()).is_err());
+        assert!(rename_note(&conn, "missing".into(), "x".into()).is_err());
+
+        delete_note(&conn, habits.id.clone()).unwrap();
+        delete_note(&conn, first.id.clone()).unwrap();
+        assert_eq!(scope().iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), [budget.id.as_str()]);
+        assert!(delete_note(&conn, budget.id.clone()).is_err(), "the last note stays");
+        assert!(delete_note(&conn, habits.id).is_err());
+
+        delete_project(&conn, p.id.clone()).unwrap();
+        let left: i32 = conn.query_row("SELECT COUNT(*) FROM notes WHERE project_id IS NOT NULL", [], |r| r.get(0)).unwrap();
+        assert_eq!(left, 0, "a project's notes go with it");
     }
 
     #[test]

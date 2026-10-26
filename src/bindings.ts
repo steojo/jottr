@@ -15,9 +15,12 @@ export const commands = {
 	/**  The project's tickets stay on the board, without a project. */
 	deleteProject: (id: string) => __TAURI_INVOKE<null>("delete_project", { id }),
 	reorderProject: (id: string, beforeId: string | null) => __TAURI_INVOKE<null>("reorder_project", { id, beforeId }),
-	/**  Notes on a project, or on the board itself when `project_id` is `null`. */
-	getNotes: (boardId: string, projectId: string | null) => __TAURI_INVOKE<string>("get_notes", { boardId, projectId }),
-	setNotes: (boardId: string, projectId: string | null, notes: string) => __TAURI_INVOKE<null>("set_notes", { boardId, projectId, notes }),
+	/**  Notes on a project, or on the board itself when `project_id` is `null`, in tab order. */
+	listNotes: (boardId: string, projectId: string | null) => __TAURI_INVOKE<Note[]>("list_notes", { boardId, projectId }),
+	createNote: (boardId: string, projectId: string | null, title: string) => __TAURI_INVOKE<Note>("create_note", { boardId, projectId, title }),
+	renameNote: (id: string, title: string) => __TAURI_INVOKE<Note>("rename_note", { id, title }),
+	setNoteBody: (id: string, body: string) => __TAURI_INVOKE<null>("set_note_body", { id, body }),
+	deleteNote: (id: string) => __TAURI_INVOKE<null>("delete_note", { id }),
 	listLabels: () => __TAURI_INVOKE<Label[]>("list_labels"),
 	createLabel: (boardId: string, name: string, color: Color) => __TAURI_INVOKE<Label>("create_label", { boardId, name, color }),
 	updateLabel: (id: string, patch: LabelPatch) => __TAURI_INVOKE<Label>("update_label", { id, patch }),
@@ -150,6 +153,13 @@ export type NewTicket = {
 	title: string,
 	status: Status,
 	priority: Priority,
+};
+
+/**  A named markdown note on a board, or on one of its projects. Shown as tabs, in `position` order. */
+export type Note = {
+	id: string,
+	title: string,
+	body: string,
 };
 
 export type NotificationStatus = {

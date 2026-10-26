@@ -19,6 +19,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0011_notes.sql"),
     include_str!("../migrations/0012_quick_capture.sql"),
     include_str!("../migrations/0013_due_reminders.sql"),
+    include_str!("../migrations/0014_note_tabs.sql"),
 ];
 
 pub struct Db(pub Mutex<Connection>);
@@ -66,4 +67,46 @@ pub fn now() -> i64 {
 
 pub fn new_id() -> String {
     uuid::Uuid::now_v7().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn moves_existing_notes_into_note_tabs() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        let before = MIGRATIONS.iter().position(|sql| sql.contains("CREATE TABLE notes")).unwrap();
+        for sql in &MIGRATIONS[..before] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", before as i64).unwrap();
+        conn.execute_batch(
+            "INSERT INTO boards (id, name, key, color, position, created_at, updated_at, notes)
+                 VALUES ('b1', 'Engineering', 'ENG', 'blue', 0, 0, 0, '- board idea'),
+                        ('b2', 'Ops', 'OPS', 'red', 1, 0, 0, '');
+             INSERT INTO projects (id, board_id, name, position, created_at, updated_at, notes)
+                 VALUES ('p1', 'b1', 'iOS Apps', 0, 0, 0, '- app idea');",
+        )
+        .unwrap();
+
+        migrate(&mut conn).unwrap();
+        let mut stmt =
+            conn.prepare("SELECT board_id, project_id, title, body FROM notes ORDER BY board_id, project_id").unwrap();
+        let notes = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<(String, Option<String>, String, String)>>>()
+            .unwrap();
+        assert_eq!(
+            notes,
+            [
+                ("b1".into(), None, "Notes".into(), "- board idea".into()),
+                ("b1".into(), Some("p1".into()), "Notes".into(), "- app idea".into()),
+            ],
+            "empty notes aren't copied"
+        );
+        assert!(conn.prepare("SELECT notes FROM boards").is_err(), "the old column is gone");
+    }
 }

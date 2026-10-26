@@ -12,6 +12,7 @@ import {
   type LabelPatch,
   type NewBoard,
   type NewTicket,
+  type Note,
   type Project,
   type Settings,
   type Status,
@@ -160,20 +161,39 @@ export function useCreateTickets() {
 
 const notesKey = (boardId: string, projectId: string | null) => ["notes", boardId, projectId ?? "board"] as const;
 
-/** Notes on a project, or on the board itself when `projectId` is `null`. */
+/** Notes on a project, or on the board itself when `projectId` is `null`, in tab order. */
 export function useNotes(boardId: string, projectId: string | null) {
-  return useQuery({ queryKey: notesKey(boardId, projectId), queryFn: () => commands.getNotes(boardId, projectId) });
+  return useQuery({ queryKey: notesKey(boardId, projectId), queryFn: () => commands.listNotes(boardId, projectId) });
 }
 
 /**
- * Saves notes outside the mutation cache: they don't change any tickets, so My Focus and
+ * Changes notes outside the mutation cache: they don't change any tickets, so My Focus and
  * search needn't refresh after every pause in typing.
  */
-export function useSaveNotes(boardId: string, projectId: string | null) {
+export function useNoteActions(boardId: string, projectId: string | null) {
   const qc = useQueryClient();
-  return (notes: string) => {
-    qc.setQueryData(notesKey(boardId, projectId), notes);
-    return commands.setNotes(boardId, projectId, notes);
+  const key = notesKey(boardId, projectId);
+  const change = (update: (notes: Note[]) => Note[]) => qc.setQueryData<Note[]>(key, (notes) => notes && update(notes));
+  return {
+    save: (id: string, body: string) => {
+      // An editor saves as it closes, which can be just after its note was deleted.
+      if (!qc.getQueryData<Note[]>(key)?.some((n) => n.id === id)) return Promise.resolve(null);
+      change((notes) => notes.map((n) => (n.id === id ? { ...n, body } : n)));
+      return commands.setNoteBody(id, body);
+    },
+    create: async (title: string) => {
+      const note = await commands.createNote(boardId, projectId, title);
+      change((notes) => [...notes, note]);
+      return note;
+    },
+    rename: async (id: string, title: string) => {
+      const note = await commands.renameNote(id, title);
+      change((notes) => notes.map((n) => (n.id === id ? note : n)));
+    },
+    remove: async (id: string) => {
+      await commands.deleteNote(id);
+      change((notes) => notes.filter((n) => n.id !== id));
+    },
   };
 }
 

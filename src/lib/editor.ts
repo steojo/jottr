@@ -16,12 +16,14 @@ const SAVE_DELAY_MS = 500;
  */
 export function useMarkdownEditor({
   value,
+  autofocus = false,
   onSave,
   placeholder,
   extensions = [],
   editorProps,
 }: {
   value: string;
+  autofocus?: boolean;
   onSave: (markdown: string) => void;
   placeholder: string;
   extensions?: Extensions;
@@ -57,6 +59,7 @@ export function useMarkdownEditor({
     ],
     content: value,
     contentType: "markdown",
+    autofocus,
     editorProps: { attributes: { class: "description outline-none" }, ...editorProps },
     onUpdate: ({ editor }) => {
       latest.current = editor.getMarkdown();

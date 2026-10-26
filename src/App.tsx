@@ -9,8 +9,7 @@ import { CreateTicketDialog } from "./components/CreateTicketDialog";
 import { FilterBar, FilterMenu } from "./components/Filters";
 import { ConfirmDialog, NameDialog } from "./components/FormDialogs";
 import { ChevronLeftIcon, ChevronUpDownIcon, PlusIcon, ProjectIcon } from "./components/icons";
-import { Notes } from "./components/Notes";
-import type { NotesHandle } from "./components/NotesEditor";
+import { Notes, type NotesHandle } from "./components/Notes";
 import { Picker } from "./components/Picker";
 import { SettingsPage } from "./components/Settings";
 import { ShortcutSheet } from "./components/ShortcutSheet";
@@ -537,6 +536,27 @@ function App() {
       shortcut: "⌘ ↵",
       run: () => notesHandle.current?.makeTickets(),
     });
+    commands.push(
+      { id: "new-note", label: "New note…", group: "Notes", shortcut: "⌘ T", run: () => runShortcut("mod+t") },
+      { id: "rename-note", label: "Rename note…", group: "Notes", run: () => notesHandle.current?.renameNote() },
+      { id: "delete-note", label: "Delete note…", group: "Notes", run: () => notesHandle.current?.deleteNote() },
+      {
+        id: "previous-note",
+        label: "Previous note",
+        group: "Notes",
+        shortcut: "⌘ ⌥ ←",
+        keywords: "tab",
+        run: () => runShortcut("mod+alt+arrowleft"),
+      },
+      {
+        id: "next-note",
+        label: "Next note",
+        group: "Notes",
+        shortcut: "⌘ ⌥ →",
+        keywords: "tab",
+        run: () => runShortcut("mod+alt+arrowright"),
+      },
+    );
   }
   if (view.kind === "board") {
     commands.push({

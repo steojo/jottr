@@ -26,8 +26,8 @@ function combo(e: KeyboardEvent) {
   return parts.join("+");
 }
 
-// Work even while typing in a field.
-const ALWAYS = new Set(["mod+k"]);
+// Work even while typing in a field. The note tab keys work while writing notes.
+const ALWAYS = new Set(["mod+k", "mod+t", "mod+alt+arrowleft", "mod+alt+arrowright"]);
 
 function onKeyDown(e: KeyboardEvent) {
   if (e.defaultPrevented || e.isComposing) return;

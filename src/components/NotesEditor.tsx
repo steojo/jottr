@@ -8,28 +8,31 @@ import { useMarkdownEditor } from "../lib/editor";
 import { linkLine, pickIdeas, TICKET_LINK } from "../lib/notes";
 
 /** Lets the header's Make tickets button reach the editor. */
-export type NotesHandle = { makeTickets: () => void };
+export type EditorHandle = { makeTickets: () => void };
 
 /** Lines picked out of the notes, and how to swap them for ticket links once the tickets exist. */
 export type TicketRequest = { drafts: TicketDraft[]; replace: (tickets: Ticket[]) => void; cancel: () => void };
 
 export default function NotesEditor({
   value,
+  autofocus,
   onSave,
   onMakeTickets,
   onOpenTicket,
   handle,
 }: {
   value: string;
+  autofocus?: boolean;
   onSave: (markdown: string) => void;
   onMakeTickets: (request: TicketRequest) => void;
   onOpenTicket: (id: string) => void;
-  handle: RefObject<NotesHandle | null>;
+  handle: RefObject<EditorHandle | null>;
 }) {
   // The editor keeps its first props, so its handlers read the latest ones from here.
   const actions = useRef({ makeTickets: () => {}, onOpenTicket });
   const editor = useMarkdownEditor({
     value,
+    autofocus,
     onSave,
     placeholder: "Dump ideas here, one per line. Put the cursor on a line and press ⌘↵ to make it a ticket.",
     extensions: [TaskList, TaskItem.configure({ nested: true })],

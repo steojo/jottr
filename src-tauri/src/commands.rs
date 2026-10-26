@@ -6,8 +6,8 @@ use crate::capture;
 use crate::notifications;
 use crate::db::{AttachmentsDir, Db};
 use crate::models::{
-    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Priority, Project,
-    Settings, Status, Ticket, TicketDraft, TicketPatch,
+    Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Note, Priority,
+    Project, Settings, Status, Ticket, TicketDraft, TicketPatch,
 };
 use crate::store::{self, err, CmdResult};
 
@@ -80,17 +80,35 @@ pub async fn create_tickets(
     store::create_tickets(&mut *db.0.lock().map_err(err)?, board_id, project_id, status, drafts)
 }
 
-/// Notes on a project, or on the board itself when `project_id` is `null`.
+/// Notes on a project, or on the board itself when `project_id` is `null`, in tab order.
 #[tauri::command]
 #[specta::specta]
-pub async fn get_notes(db: State<'_, Db>, board_id: String, project_id: Option<String>) -> CmdResult<String> {
-    store::get_notes(&*db.0.lock().map_err(err)?, board_id, project_id)
+pub async fn list_notes(db: State<'_, Db>, board_id: String, project_id: Option<String>) -> CmdResult<Vec<Note>> {
+    store::list_notes(&*db.0.lock().map_err(err)?, board_id, project_id)
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn set_notes(db: State<'_, Db>, board_id: String, project_id: Option<String>, notes: String) -> CmdResult<()> {
-    store::set_notes(&*db.0.lock().map_err(err)?, board_id, project_id, notes)
+pub async fn create_note(db: State<'_, Db>, board_id: String, project_id: Option<String>, title: String) -> CmdResult<Note> {
+    store::create_note(&*db.0.lock().map_err(err)?, board_id, project_id, title)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn rename_note(db: State<'_, Db>, id: String, title: String) -> CmdResult<Note> {
+    store::rename_note(&*db.0.lock().map_err(err)?, id, title)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn set_note_body(db: State<'_, Db>, id: String, body: String) -> CmdResult<()> {
+    store::set_note_body(&*db.0.lock().map_err(err)?, id, body)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_note(db: State<'_, Db>, id: String) -> CmdResult<()> {
+    store::delete_note(&*db.0.lock().map_err(err)?, id)
 }
 
 #[tauri::command]

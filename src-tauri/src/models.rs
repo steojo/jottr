@@ -106,6 +106,23 @@ impl Project {
     }
 }
 
+/// A named markdown note on a board, or on one of its projects. Shown as tabs, in `position` order.
+#[derive(Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Note {
+    pub id: String,
+    pub title: String,
+    pub body: String,
+}
+
+impl Note {
+    pub const COLUMNS: &'static str = "id, title, body";
+
+    pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Self { id: row.get(0)?, title: row.get(1)?, body: row.get(2)? })
+    }
+}
+
 #[derive(Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Ticket {

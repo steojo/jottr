@@ -74,6 +74,8 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
     title: "Notes",
     keys: [
       ["⌘ ↵", "Make tickets from the selected lines"],
+      ["⌘ T", "New note"],
+      ["⌘ ⌥ ←  →", "Previous / next note"],
       ["Esc", "Finish editing"],
     ],
   },
