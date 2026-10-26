@@ -32,7 +32,8 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
         <h2 className="px-1 font-mono text-[10px] tracking-wider text-fg-quaternary uppercase">Notifications</h2>
         <div className="divide-y divide-line-subtle rounded-lg border border-line-subtle">
           <Setting title="Due-date reminders" detail={
-            update.isPending && update.variables?.dueReminders && notifications.data?.permission !== "granted"
+            // Only turning reminders on asks macOS for permission.
+            update.isPending && update.variables?.dueReminders && !settings.dueReminders
               ? <span role="status">Waiting for macOS notification permission. If no prompt appears, check System Settings → Notifications.</span>
               : "One notification per unfinished ticket on its due date, even when Jottr is closed."
           }>

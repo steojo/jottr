@@ -561,7 +561,7 @@ export function useCapturedTickets() {
 const settingsKey = ["settings"] as const;
 const notificationStatusKey = ["notification-status"] as const;
 
-/** System permission can change outside Jottr, so refresh it whenever Settings regains focus. */
+/** System permission can change outside Jottr, so Rust asks for a refresh whenever the window comes forward. */
 export function useNotificationStatus() {
   const qc = useQueryClient();
   useEffect(() => {
@@ -574,7 +574,6 @@ export function useNotificationStatus() {
     queryKey: notificationStatusKey,
     queryFn: commands.getNotificationStatus,
     staleTime: 0,
-    refetchOnWindowFocus: "always",
   });
 }
 

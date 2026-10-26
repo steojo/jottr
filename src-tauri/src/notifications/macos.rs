@@ -234,23 +234,26 @@ pub fn remove(identifiers: &[String]) -> CmdResult<()> {
     Ok(())
 }
 
-pub fn schedule(identifier: &str, title: &str, body: &str, time: i64) -> CmdResult<()> {
+/// Delivers at `time`, or right away when it's `None`.
+pub fn schedule(identifier: &str, title: &str, body: &str, time: Option<i64>) -> CmdResult<()> {
     let center = center()?;
     let content = UNMutableNotificationContent::new();
     content.setTitle(&NSString::from_str(title));
     content.setBody(&NSString::from_str(body));
     content.setSound(Some(&UNNotificationSound::defaultSound()));
-    let calendar = calendar();
-    let components = calendar.components_fromDate(
-        COMPONENTS,
-        &NSDate::dateWithTimeIntervalSince1970(time as f64 / 1_000.0),
-    );
-    components.setCalendar(Some(&calendar));
-    let trigger = UNCalendarNotificationTrigger::triggerWithDateMatchingComponents_repeats(&components, false);
+    let trigger = time.map(|time| {
+        let calendar = calendar();
+        let components = calendar.components_fromDate(
+            COMPONENTS,
+            &NSDate::dateWithTimeIntervalSince1970(time as f64 / 1_000.0),
+        );
+        components.setCalendar(Some(&calendar));
+        UNCalendarNotificationTrigger::triggerWithDateMatchingComponents_repeats(&components, false)
+    });
     let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
         &NSString::from_str(identifier),
         &content,
-        Some(&trigger),
+        trigger.as_deref().map(|trigger| -> &UNNotificationTrigger { trigger }),
     );
     let (tx, rx) = mpsc::channel();
     center.addNotificationRequest_withCompletionHandler(

@@ -108,7 +108,7 @@ pub fn run() {
             tauri::WindowEvent::Focused(false) => {
                 let _ = window.app_handle().save_window_state(WINDOW_STATE);
             }
-            tauri::WindowEvent::Focused(true) if window.label() == "main" => notifications::refresh(window.app_handle()),
+            tauri::WindowEvent::Focused(true) if window.label() == "main" => notifications::focused(window.app_handle()),
             // Closing the main window quits, as before quick capture: its hidden window would
             // otherwise keep Jottr running with nothing to show.
             tauri::WindowEvent::CloseRequested { .. } if window.label() == "main" => window.app_handle().exit(0),
