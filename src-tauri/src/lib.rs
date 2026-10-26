@@ -2,6 +2,7 @@ mod capture;
 mod commands;
 mod db;
 mod models;
+mod notifications;
 mod store;
 
 use std::sync::Mutex;
@@ -52,6 +53,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::restore_ticket,
             commands::get_settings,
             commands::update_settings,
+            commands::get_notification_status,
+            commands::take_notification_ticket,
+            commands::open_notification_settings,
             commands::capture_ticket,
             commands::close_capture,
             commands::list_attachments,
@@ -83,6 +87,7 @@ pub fn run() {
     export_bindings(&builder);
 
     tauri::Builder::default()
+        .plugin(notifications::plugin())
         .plugin(tauri_plugin_dialog::init())
         .plugin(capture::plugin())
         .plugin(
@@ -100,6 +105,7 @@ pub fn run() {
             tauri::WindowEvent::Focused(false) => {
                 let _ = window.app_handle().save_window_state(WINDOW_STATE);
             }
+            tauri::WindowEvent::Focused(true) if window.label() == "main" => notifications::refresh(window.app_handle()),
             // Closing the main window quits, as before quick capture: its hidden window would
             // otherwise keep Jottr running with nothing to show.
             tauri::WindowEvent::CloseRequested { .. } if window.label() == "main" => window.app_handle().exit(0),
@@ -117,6 +123,7 @@ pub fn run() {
             capture::setup(app.handle(), &store::get_settings(&conn)?);
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(db::AttachmentsDir(dir.join("attachments")));
+            notifications::start(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())

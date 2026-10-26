@@ -289,10 +289,14 @@ pub struct Settings {
     pub quick_capture: bool,
     /// In the global shortcut plugin's format, e.g. `Alt+Space`.
     pub capture_shortcut: String,
+    /// One local macOS notification per unfinished ticket on its due date.
+    pub due_reminders: bool,
+    /// Local wall-clock time, in 24-hour `HH:MM` format.
+    pub reminder_time: String,
 }
 
 impl Settings {
-    pub const COLUMNS: &'static str = "auto_archive, archive_after_days, show_canceled, show_backlog, show_created, quick_capture, capture_shortcut";
+    pub const COLUMNS: &'static str = "auto_archive, archive_after_days, show_canceled, show_backlog, show_created, quick_capture, capture_shortcut, due_reminders, reminder_time";
 
     pub fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Self {
@@ -303,6 +307,8 @@ impl Settings {
             show_created: row.get(4)?,
             quick_capture: row.get(5)?,
             capture_shortcut: row.get(6)?,
+            due_reminders: row.get(7)?,
+            reminder_time: row.get(8)?,
         })
     }
 }

@@ -3,6 +3,7 @@ use std::process::Command;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::capture;
+use crate::notifications;
 use crate::db::{AttachmentsDir, Db};
 use crate::models::{
     Attachment, Board, ChecklistItem, ChecklistPatch, Color, Label, LabelPatch, NewBoard, NewTicket, Priority, Project,
@@ -24,14 +25,14 @@ pub async fn create_board(db: State<'_, Db>, input: NewBoard) -> CmdResult<Board
 
 #[tauri::command]
 #[specta::specta]
-pub async fn update_board(db: State<'_, Db>, id: String, input: NewBoard) -> CmdResult<Board> {
-    store::update_board(&*db.0.lock().map_err(err)?, id, input)
+pub async fn update_board(app: AppHandle, db: State<'_, Db>, id: String, input: NewBoard) -> CmdResult<Board> {
+    notifications::after_change(&app, store::update_board(&*db.0.lock().map_err(err)?, id, input))
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_board(db: State<'_, Db>, id: String) -> CmdResult<()> {
-    store::delete_board(&mut *db.0.lock().map_err(err)?, id)
+pub async fn delete_board(app: AppHandle, db: State<'_, Db>, id: String) -> CmdResult<()> {
+    notifications::after_change(&app, store::delete_board(&mut *db.0.lock().map_err(err)?, id))
 }
 
 #[tauri::command]
@@ -94,8 +95,8 @@ pub async fn set_notes(db: State<'_, Db>, board_id: String, project_id: Option<S
 
 #[tauri::command]
 #[specta::specta]
-pub async fn update_ticket(db: State<'_, Db>, id: String, patch: TicketPatch) -> CmdResult<Ticket> {
-    store::update_ticket(&mut *db.0.lock().map_err(err)?, id, patch)
+pub async fn update_ticket(app: AppHandle, db: State<'_, Db>, id: String, patch: TicketPatch) -> CmdResult<Ticket> {
+    notifications::after_change(&app, store::update_ticket(&mut *db.0.lock().map_err(err)?, id, patch))
 }
 
 /// Moves a ticket to a board (or the Inbox when `board_id` is `None`) and a project on it
@@ -103,19 +104,20 @@ pub async fn update_ticket(db: State<'_, Db>, id: String, patch: TicketPatch) ->
 #[tauri::command]
 #[specta::specta]
 pub async fn move_ticket(
+    app: AppHandle,
     db: State<'_, Db>,
     id: String,
     board_id: Option<String>,
     project_id: Option<String>,
 ) -> CmdResult<Ticket> {
-    store::move_ticket(&mut *db.0.lock().map_err(err)?, id, board_id, project_id)
+    notifications::after_change(&app, store::move_ticket(&mut *db.0.lock().map_err(err)?, id, board_id, project_id))
 }
 
 /// `due_date` is `YYYY-MM-DD`, or `None` to clear it.
 #[tauri::command]
 #[specta::specta]
-pub async fn set_due_date(db: State<'_, Db>, id: String, due_date: Option<String>) -> CmdResult<Ticket> {
-    store::set_due_date(&*db.0.lock().map_err(err)?, id, due_date)
+pub async fn set_due_date(app: AppHandle, db: State<'_, Db>, id: String, due_date: Option<String>) -> CmdResult<Ticket> {
+    notifications::after_change(&app, store::set_due_date(&*db.0.lock().map_err(err)?, id, due_date))
 }
 
 #[tauri::command]
@@ -149,8 +151,8 @@ pub async fn delete_checklist_item(db: State<'_, Db>, id: String) -> CmdResult<(
 /// Places a ticket at an exact status and position, e.g. after a drag and drop.
 #[tauri::command]
 #[specta::specta]
-pub async fn reposition_ticket(db: State<'_, Db>, id: String, status: Status, position: f64) -> CmdResult<Ticket> {
-    store::reposition_ticket(&*db.0.lock().map_err(err)?, id, status, position)
+pub async fn reposition_ticket(app: AppHandle, db: State<'_, Db>, id: String, status: Status, position: f64) -> CmdResult<Ticket> {
+    notifications::after_change(&app, store::reposition_ticket(&*db.0.lock().map_err(err)?, id, status, position))
 }
 
 #[tauri::command]
@@ -218,8 +220,8 @@ pub async fn set_ticket_label(
 /// Permanently deletes a ticket with its checklist and labels.
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_ticket(db: State<'_, Db>, dir: State<'_, AttachmentsDir>, id: String) -> CmdResult<()> {
-    store::delete_ticket(&*db.0.lock().map_err(err)?, &dir.0, id)
+pub async fn delete_ticket(app: AppHandle, db: State<'_, Db>, dir: State<'_, AttachmentsDir>, id: String) -> CmdResult<()> {
+    notifications::after_change(&app, store::delete_ticket(&*db.0.lock().map_err(err)?, &dir.0, id))
 }
 
 /// Tickets on every board and in the Inbox, best matches first.
@@ -246,15 +248,15 @@ pub async fn list_archived(db: State<'_, Db>) -> CmdResult<Vec<Ticket>> {
 /// Archives Done tickets that are due, if auto-archive is on. Returns how many it archived.
 #[tauri::command]
 #[specta::specta]
-pub async fn auto_archive(db: State<'_, Db>) -> CmdResult<i32> {
-    store::auto_archive(&*db.0.lock().map_err(err)?)
+pub async fn auto_archive(app: AppHandle, db: State<'_, Db>) -> CmdResult<i32> {
+    notifications::after_change(&app, store::auto_archive(&*db.0.lock().map_err(err)?))
 }
 
 /// Brings a ticket back from the Archive to the top of its status group.
 #[tauri::command]
 #[specta::specta]
-pub async fn restore_ticket(db: State<'_, Db>, id: String) -> CmdResult<Ticket> {
-    store::restore_ticket(&*db.0.lock().map_err(err)?, id)
+pub async fn restore_ticket(app: AppHandle, db: State<'_, Db>, id: String) -> CmdResult<Ticket> {
+    notifications::after_change(&app, store::restore_ticket(&*db.0.lock().map_err(err)?, id))
 }
 
 #[tauri::command]
@@ -268,6 +270,10 @@ pub async fn get_settings(db: State<'_, Db>) -> CmdResult<Settings> {
 #[tauri::command]
 #[specta::specta]
 pub async fn update_settings(app: AppHandle, db: State<'_, Db>, settings: Settings) -> CmdResult<Settings> {
+    let enabling = settings.due_reminders && !store::get_settings(&*db.0.lock().map_err(err)?)?.due_reminders;
+    if enabling {
+        notifications::request_permission().await?;
+    }
     let mut conn = db.0.lock().map_err(err)?;
     let previous = store::get_settings(&conn)?;
     let tx = conn.transaction().map_err(err)?;
@@ -279,7 +285,27 @@ pub async fn update_settings(app: AppHandle, db: State<'_, Db>, settings: Settin
         }
     }
     tx.commit().map_err(err)?;
+    notifications::refresh(&app);
     Ok(saved)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_notification_status(app: AppHandle) -> CmdResult<notifications::NotificationStatus> {
+    notifications::status(app).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn take_notification_ticket(app: AppHandle) -> CmdResult<Option<String>> {
+    notifications::take_ticket(&app)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn open_notification_settings() -> CmdResult<()> {
+    let status = Command::new("open").arg("x-apple.systempreferences:com.apple.Notifications-Settings.extension").status().map_err(err)?;
+    if status.success() { Ok(()) } else { Err("Couldn't open notification settings.".into()) }
 }
 
 /// Adds a ticket to the bottom of the Inbox from the quick capture box, then hides the box.

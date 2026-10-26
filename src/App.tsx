@@ -31,6 +31,7 @@ import {
   useFocus,
   useLabels,
   useMoveTicket,
+  useNotificationTickets,
   useProjects,
   useRenameProject,
   useReorderBoard,
@@ -108,6 +109,7 @@ function App() {
   const addAttachments = useAddAttachments();
   useAutoArchive();
   useCapturedTickets();
+  useNotificationTickets(openAnywhere, setToast);
   const createProject = useCreateProject();
   const renameProject = useRenameProject();
   const deleteProject = useDeleteProject();

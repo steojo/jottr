@@ -802,14 +802,61 @@ pub fn get_settings(conn: &Connection) -> CmdResult<Settings> {
         .map_err(err)
 }
 
+#[derive(Debug)]
+pub struct ReminderTicket {
+    pub id: String,
+    pub due_date: String,
+    pub title: String,
+    pub key: Option<String>,
+}
+
+/// Include past dates too, so delivered reminders stay until their ticket is finished.
+pub fn reminder_tickets(conn: &Connection) -> CmdResult<Vec<ReminderTicket>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.due_date, t.title, b.key || '-' || t.number
+         FROM tickets t LEFT JOIN boards b ON b.id = t.board_id
+         WHERE t.due_date IS NOT NULL AND t.archived_at IS NULL
+           AND t.status NOT IN ('done', 'canceled') ORDER BY t.due_date, t.id",
+    ).map_err(err)?;
+    let rows = stmt.query_map([], |row| Ok(ReminderTicket {
+        id: row.get(0)?, due_date: row.get(1)?, title: row.get(2)?, key: row.get(3)?,
+    })).map_err(err)?;
+    rows.collect::<rusqlite::Result<_>>().map_err(err)
+}
+
+pub fn reminder_schedules(conn: &Connection) -> CmdResult<std::collections::HashMap<(String, String), i64>> {
+    let mut stmt = conn.prepare("SELECT ticket_id, due_date, scheduled_for FROM due_reminders").map_err(err)?;
+    let rows = stmt.query_map([], |row| Ok(((row.get(0)?, row.get(1)?), row.get(2)?))).map_err(err)?;
+    rows.collect::<rusqlite::Result<_>>().map_err(err)
+}
+
+pub fn save_reminder_schedule(conn: &Connection, id: &str, date: &str, scheduled_for: i64) -> CmdResult<()> {
+    // A ticket may have been deleted while the notification worker was talking to macOS.
+    conn.execute(
+        "INSERT INTO due_reminders (ticket_id, due_date, scheduled_for)
+         SELECT id, ?2, ?3 FROM tickets WHERE id = ?1
+         ON CONFLICT(ticket_id, due_date) DO UPDATE SET scheduled_for = excluded.scheduled_for",
+        params![id, date, scheduled_for],
+    ).map_err(err)?;
+    Ok(())
+}
+
+pub fn forget_reminder_schedule(conn: &Connection, id: &str, date: &str) -> CmdResult<()> {
+    conn.execute("DELETE FROM due_reminders WHERE ticket_id = ?1 AND due_date = ?2", params![id, date]).map_err(err)?;
+    Ok(())
+}
+
 /// Saves the settings, then archives anything they now make due.
 pub fn update_settings(conn: &Connection, settings: Settings) -> CmdResult<Settings> {
     if !(1..=365).contains(&settings.archive_after_days) {
         return Err("Archive delay must be between 1 and 365 days".into());
     }
+    if !is_valid_time(&settings.reminder_time) {
+        return Err("Reminder time must be HH:MM (00:00–23:59)".into());
+    }
     conn.execute(
         "UPDATE settings SET auto_archive = ?1, archive_after_days = ?2, show_canceled = ?3, show_backlog = ?4,
-             show_created = ?5, quick_capture = ?6, capture_shortcut = ?7
+             show_created = ?5, quick_capture = ?6, capture_shortcut = ?7, due_reminders = ?8, reminder_time = ?9
          WHERE id = 1",
         params![
             settings.auto_archive,
@@ -818,7 +865,9 @@ pub fn update_settings(conn: &Connection, settings: Settings) -> CmdResult<Setti
             settings.show_backlog,
             settings.show_created,
             settings.quick_capture,
-            settings.capture_shortcut
+            settings.capture_shortcut,
+            settings.due_reminders,
+            settings.reminder_time
         ],
     )
     .map_err(err)?;
@@ -948,12 +997,31 @@ pub fn attachment_path(conn: &Connection, root: &Path, id: String) -> CmdResult<
     Ok(get_attachment(conn, root, &id)?.path)
 }
 
-fn is_valid_date(date: &str) -> bool {
+pub fn is_valid_date(date: &str) -> bool {
     let b = date.as_bytes();
-    b.len() == 10
-        && b[4] == b'-'
-        && b[7] == b'-'
-        && b.iter().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-'
+        || !b.iter().enumerate().all(|(i, c)| i == 4 || i == 7 || c.is_ascii_digit())
+    {
+        return false;
+    }
+    let year: u32 = date[..4].parse().unwrap();
+    let month: u32 = date[5..7].parse().unwrap();
+    let day: u32 = date[8..].parse().unwrap();
+    let days = match month {
+        4 | 6 | 9 | 11 => 30,
+        2 if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) => 29,
+        2 => 28,
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        _ => return false,
+    };
+    year > 0 && (1..=days).contains(&day)
+}
+
+pub fn is_valid_time(time: &str) -> bool {
+    let b = time.as_bytes();
+    b.len() == 5 && b[2] == b':'
+        && b.iter().enumerate().all(|(i, c)| i == 2 || c.is_ascii_digit())
+        && &time[..2] < "24" && &time[3..] < "60"
 }
 
 /// `due_date` is `YYYY-MM-DD`, or `None` to clear it.
@@ -1583,6 +1651,8 @@ mod tests {
         assert!(defaults.show_created);
         assert!(defaults.quick_capture);
         assert_eq!(defaults.capture_shortcut, "Alt+Space");
+        assert!(!defaults.due_reminders);
+        assert_eq!(defaults.reminder_time, "09:00");
 
         let t = titled(&mut conn, None, "Done", Status::Done);
         finished_days_ago(&conn, &t, 3);
@@ -1600,6 +1670,8 @@ mod tests {
                 show_created: false,
                 quick_capture: false,
                 capture_shortcut: "Super+Shift+KeyJ".into(),
+                due_reminders: true,
+                reminder_time: "08:30".into(),
             },
         )
         .unwrap();
@@ -1608,9 +1680,63 @@ mod tests {
             (true, 2, true, false, false)
         );
         assert_eq!((saved.quick_capture, saved.capture_shortcut.as_str()), (false, "Super+Shift+KeyJ"));
+        assert!(saved.due_reminders);
+        assert_eq!(saved.reminder_time, "08:30");
         assert_eq!(list_archived(&conn).unwrap().len(), 1, "saving archives anything now due");
 
         assert!(update_settings(&conn, Settings { archive_after_days: 0, ..get_settings(&conn).unwrap() }).is_err());
+    }
+
+    #[test]
+    fn reminder_times_and_due_dates_are_real_calendar_values() {
+        let conn = db();
+        for time in ["00:00", "09:05", "23:59"] {
+            assert!(update_settings(&conn, Settings { reminder_time: time.into(), ..get_settings(&conn).unwrap() }).is_ok());
+        }
+        for time in ["9:00", "24:00", "12:60", "12:0x", "", "１２:３０"] {
+            assert!(update_settings(&conn, Settings { reminder_time: time.into(), ..get_settings(&conn).unwrap() }).is_err());
+            assert_eq!(get_settings(&conn).unwrap().reminder_time, "23:59", "invalid input cannot change settings");
+        }
+        for date in ["2024-02-29", "2000-02-29", "2026-04-30", "2026-12-31"] { assert!(is_valid_date(date)); }
+        for date in ["2026-02-29", "1900-02-29", "2026-04-31", "2026-00-01", "2026-13-01", "2026-01-00", "0000-01-01", "2026-1-01", "２０２６-01-01"] {
+            assert!(!is_valid_date(date), "{date}");
+        }
+    }
+
+    #[test]
+    fn reminders_follow_ticket_lifecycle_and_keep_elapsed_history() {
+        let mut conn = db();
+        let eng = board(&conn, "ENG");
+        let t = ticket(&mut conn, Some(&eng.id), Status::Ready);
+        set_due_date(&conn, t.id.clone(), Some("2026-10-26".into())).unwrap();
+        let inbox = ticket(&mut conn, None, Status::Backlog);
+        set_due_date(&conn, inbox.id.clone(), Some("2026-10-27".into())).unwrap();
+        let candidates = reminder_tickets(&conn).unwrap();
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].key.as_deref(), Some("ENG-1"));
+        assert!(candidates[1].key.is_none());
+        save_reminder_schedule(&conn, &t.id, "2026-10-26", 100).unwrap();
+        save_reminder_schedule(&conn, &t.id, "2026-10-26", 200).unwrap();
+        assert_eq!(reminder_schedules(&conn).unwrap()[&(t.id.clone(), "2026-10-26".into())], 200);
+        assert_eq!(reminder_schedules(&conn).unwrap().len(), 1, "replacing a schedule cannot duplicate it");
+        for status in [Status::Done, Status::Canceled] {
+            set_status(&mut conn, &t, status);
+            assert_eq!(reminder_tickets(&conn).unwrap().len(), 1);
+        }
+        set_status(&mut conn, &t, Status::Ready);
+        assert_eq!(reminder_tickets(&conn).unwrap().len(), 2);
+        assert_eq!(reminder_schedules(&conn).unwrap().len(), 1, "restoring doesn't erase reminder history");
+        move_ticket(&mut conn, t.id.clone(), None, None).unwrap();
+        assert!(reminder_tickets(&conn).unwrap()[0].key.is_none());
+        set_due_date(&conn, t.id.clone(), None).unwrap();
+        assert_eq!(reminder_tickets(&conn).unwrap().len(), 1);
+        set_due_date(&conn, t.id.clone(), Some("2026-10-26".into())).unwrap();
+        conn.execute("UPDATE tickets SET archived_at = 1 WHERE id = ?1", [&t.id]).unwrap();
+        assert_eq!(reminder_tickets(&conn).unwrap().len(), 1);
+        delete_ticket(&conn, &temp_root(), t.id.clone()).unwrap();
+        assert!(reminder_schedules(&conn).unwrap().is_empty(), "deleting a ticket removes its reminder records");
+        save_reminder_schedule(&conn, &t.id, "2026-10-26", 300).unwrap();
+        assert!(reminder_schedules(&conn).unwrap().is_empty(), "an in-flight worker cannot recreate a deleted ticket's record");
     }
 
 

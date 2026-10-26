@@ -1,6 +1,6 @@
 import { keepPreviousData, MutationCache, QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import {
   commands,
@@ -539,6 +539,46 @@ export function useCapturedTickets() {
 }
 
 const settingsKey = ["settings"] as const;
+const notificationStatusKey = ["notification-status"] as const;
+
+/** System permission can change outside Jottr, so refresh it whenever Settings regains focus. */
+export function useNotificationStatus() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const stop = listen("notification-status-changed", () => {
+      void qc.invalidateQueries({ queryKey: notificationStatusKey });
+    });
+    return () => void stop.then((unlisten) => unlisten());
+  }, [qc]);
+  return useQuery({
+    queryKey: notificationStatusKey,
+    queryFn: commands.getNotificationStatus,
+    staleTime: 0,
+    refetchOnWindowFocus: "always",
+  });
+}
+
+/** Subscribe before draining Rust's mailbox, including a click which launched the app. */
+export function useNotificationTickets(onOpen: (ticket: Ticket) => void, onError: (message: string) => void) {
+  const callbacks = useRef({ onOpen, onError });
+  callbacks.current = { onOpen, onError };
+  useEffect(() => {
+    let disposed = false;
+    async function drain() {
+      try {
+        const id = await commands.takeNotificationTicket();
+        if (id) callbacks.current.onOpen(await fetchTicket(id));
+      } catch {
+        callbacks.current.onError("Couldn't open that reminder's ticket. It may have been deleted.");
+      }
+    }
+    const stop = listen("notification-open-ticket", () => { void drain(); }).then((unlisten) => {
+      if (!disposed) void drain();
+      return unlisten;
+    });
+    return () => { disposed = true; void stop.then((unlisten) => unlisten()); };
+  }, []);
+}
 
 export function useSettings() {
   return useQuery({ queryKey: settingsKey, queryFn: commands.getSettings });
@@ -560,6 +600,7 @@ export function useUpdateSettings() {
       qc.setQueryData(settingsKey, saved);
       void qc.invalidateQueries({ queryKey: ["tickets"] });
     },
+    onSettled: () => qc.invalidateQueries({ queryKey: notificationStatusKey }),
   });
 }
 

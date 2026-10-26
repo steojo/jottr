@@ -1,8 +1,8 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type { Settings } from "../bindings";
-import { useSettings, useUpdateSettings } from "../lib/queries";
+import { commands, type Settings } from "../bindings";
+import { useNotificationStatus, useSettings, useUpdateSettings } from "../lib/queries";
 import { formatShortcut, globalShortcut, useShortcuts } from "../lib/shortcuts";
 import { dayCount } from "../lib/tickets";
 import { CheckIcon, ChevronUpDownIcon } from "./icons";
@@ -17,6 +17,8 @@ const ring = "outline-none focus-visible:shadow-[0_0_0_1.5px_var(--color-accent)
 export function SettingsPage({ onClose }: { onClose: () => void }) {
   const settings = useSettings().data;
   const update = useUpdateSettings();
+  const notifications = useNotificationStatus();
+  const [notificationError, setNotificationError] = useState<string | null>(null);
 
   useShortcuts({ escape: onClose });
 
@@ -25,8 +27,54 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto flex max-w-[640px] flex-col gap-2 px-10 pt-8 pb-24">
-        <h2 className="px-1 font-mono text-[10px] tracking-wider text-fg-quaternary uppercase">Archive</h2>
+      <fieldset disabled={update.isPending} className="mx-auto flex max-w-[640px] flex-col gap-2 px-10 pt-8 pb-24">
+        {update.isError && <p role="alert" className="mb-2 px-1 text-status-error">{String(update.error)}</p>}
+        <h2 className="px-1 font-mono text-[10px] tracking-wider text-fg-quaternary uppercase">Notifications</h2>
+        <div className="divide-y divide-line-subtle rounded-lg border border-line-subtle">
+          <Setting title="Due-date reminders" detail={
+            update.isPending && update.variables?.dueReminders && notifications.data?.permission !== "granted"
+              ? <span role="status">Waiting for macOS notification permission. If no prompt appears, check System Settings → Notifications.</span>
+              : "One notification per unfinished ticket on its due date, even when Jottr is closed."
+          }>
+            <Switch
+              label="Due-date reminders"
+              checked={settings.dueReminders}
+              disabled={notifications.data?.permission === "unavailable"}
+              onChange={(dueReminders) => save({ dueReminders })}
+            />
+          </Setting>
+          <Setting title="Remind me at" detail="Local time. Tickets already due today remind you once when enabled." disabled={!settings.dueReminders}>
+            <ReminderTime
+              value={settings.reminderTime}
+              disabled={!settings.dueReminders}
+              onSave={(reminderTime) => save({ reminderTime })}
+            />
+          </Setting>
+          {notifications.data?.permission === "denied" && (
+            <Setting title="Notifications are blocked" detail="Allow notifications for Jottr in System Settings.">
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setNotificationError(null);
+                  void commands.openNotificationSettings().catch((error) => setNotificationError(String(error)));
+                }}
+                className={`rounded-md border border-line px-2.5 py-1 text-fg-secondary hover:bg-surface-hover ${ring}`}
+              >
+                Open System Settings
+              </button>
+            </Setting>
+          )}
+        </div>
+        {notifications.data?.permission === "unavailable" && (
+          <p className="px-1 text-fg-tertiary">Reminders are available in the packaged Jottr.app.</p>
+        )}
+        {(notifications.isError || notifications.data?.error || notificationError) && (
+          <p role="alert" className="px-1 text-status-error">
+            {notificationError ?? notifications.data?.error ?? String(notifications.error)}
+          </p>
+        )}
+        <h2 className="mt-6 px-1 font-mono text-[10px] tracking-wider text-fg-quaternary uppercase">Archive</h2>
         <div className="divide-y divide-line-subtle rounded-lg border border-line-subtle">
           <Setting title="Auto-archive" detail="Move Done tickets to the Archive after a while, to keep boards clear.">
             <Switch label="Auto-archive" checked={settings.autoArchive} onChange={(autoArchive) => save({ autoArchive })} />
@@ -104,13 +152,7 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
           </Setting>
           <Setting
             title="Shortcut"
-            detail={
-              update.isError ? (
-                <span className="text-status-error">{String(update.error)}</span>
-              ) : (
-                "Click, then press the keys you want. It needs ⌘, ⌃ or ⌥."
-              )
-            }
+            detail="Click, then press the keys you want. It needs ⌘, ⌃ or ⌥."
             disabled={!settings.quickCapture}
           >
             <ShortcutButton
@@ -120,26 +162,50 @@ export function SettingsPage({ onClose }: { onClose: () => void }) {
             />
           </Setting>
         </div>
-      </div>
+      </fieldset>
     </div>
   );
 }
 
-function Switch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+function Switch({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onMouseDown={(e) => e.preventDefault()}
       onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 shrink-0 rounded-full ${checked ? "bg-accent" : "bg-line-strong"} ${ring}`}
+      className={`relative h-5 w-9 shrink-0 rounded-full disabled:opacity-50 ${checked ? "bg-accent" : "bg-line-strong"} ${ring}`}
     >
       <span
         className={`absolute top-0.5 size-4 rounded-full ${checked ? "left-[18px] bg-on-accent" : "left-0.5 bg-fg-secondary"}`}
       />
     </button>
+  );
+}
+
+function ReminderTime({ value, disabled, onSave }: { value: string; disabled: boolean; onSave: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <input
+      type="time"
+      aria-label="Reminder time"
+      value={draft}
+      disabled={disabled}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (/^([01]\d|2[0-3]):[0-5]\d$/.test(draft) && draft !== value) onSave(draft);
+        else setDraft(value);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+        if (e.key === "Escape") { e.stopPropagation(); setDraft(value); }
+      }}
+      className={`h-7 rounded-md border border-line bg-surface px-2.5 font-mono text-[12px] text-fg-secondary scheme-dark ${ring}`}
+    />
   );
 }
 

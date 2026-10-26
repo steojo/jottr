@@ -64,6 +64,9 @@ export const commands = {
 	 *  shortcut is only saved once macOS accepts it.
 	 */
 	updateSettings: (settings: Settings) => __TAURI_INVOKE<Settings>("update_settings", { settings }),
+	getNotificationStatus: () => __TAURI_INVOKE<NotificationStatus>("get_notification_status"),
+	takeNotificationTicket: () => __TAURI_INVOKE<string | null>("take_notification_ticket"),
+	openNotificationSettings: () => __TAURI_INVOKE<null>("open_notification_settings"),
 	/**  Adds a ticket to the bottom of the Inbox from the quick capture box, then hides the box. */
 	captureTicket: (title: string) => __TAURI_INVOKE<Ticket>("capture_ticket", { title }),
 	/**  Hides the quick capture box. */
@@ -149,6 +152,13 @@ export type NewTicket = {
 	priority: Priority,
 };
 
+export type NotificationStatus = {
+	permission: Permission,
+	error: string | null,
+};
+
+export type Permission = "not_determined" | "denied" | "granted" | "unavailable";
+
 export type Priority = "none" | "low" | "medium" | "high" | "urgent";
 
 export type Project = {
@@ -171,6 +181,10 @@ export type Settings = {
 	quickCapture: boolean,
 	/**  In the global shortcut plugin's format, e.g. `Alt+Space`. */
 	captureShortcut: string,
+	/**  One local macOS notification per unfinished ticket on its due date. */
+	dueReminders: boolean,
+	/**  Local wall-clock time, in 24-hour `HH:MM` format. */
+	reminderTime: string,
 };
 
 export type Status = "backlog" | "ready" | "in_progress" | "in_review" | "done" | "canceled";
