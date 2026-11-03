@@ -38,6 +38,21 @@ export function ticketKey(t: Ticket): string | null {
   return t.boardKey && t.number !== null ? `${t.boardKey}-${t.number}` : null;
 }
 
+/**
+ * A prompt to paste into a coding agent. It names the ticket instead of copying it, so the agent
+ * reads the latest version through Jottr's command line and keeps the ticket's status up to date.
+ */
+export function agentPrompt(t: Ticket, cli: string): string {
+  const id = ticketKey(t) ?? t.id;
+  const command = /\s/.test(cli) ? `'${cli}'` : cli;
+  return [
+    `Work on Jottr ticket ${id}: ${t.title}`,
+    "",
+    `Read it first with \`${command} show ${id}\`. \`${command} help\` lists the other commands.`,
+    "Move it to In Progress when you start and In Review when you're done, ticking checklist items as you finish them.",
+  ].join("\n");
+}
+
 /** Urgent tickets are pinned above the rest of their status group until they're finished. */
 export const isPinned = (t: Pick<Ticket, "priority" | "status">) => t.priority === "urgent" && !isFinished(t);
 

@@ -58,6 +58,7 @@ const SECTIONS: { title: string; keys: [string, string][] }[] = [
       ["[  ]", "Previous / next status"],
       ["A", "Restore from the Archive"],
       ["⌘ ⇧ C", "Copy ID"],
+      ["⌘ ⌥ C", "Copy for agent"],
       ["⌘ ⌫", "Delete"],
     ],
   },

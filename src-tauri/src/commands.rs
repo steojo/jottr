@@ -337,6 +337,13 @@ pub async fn capture_ticket(app: AppHandle, db: State<'_, Db>, title: String) ->
     Ok(ticket)
 }
 
+/// The `jottr` command line is the app's own binary, wherever it's installed.
+#[tauri::command]
+#[specta::specta]
+pub async fn cli_path() -> CmdResult<String> {
+    std::env::current_exe().map(|path| path.to_string_lossy().into_owned()).map_err(err)
+}
+
 /// Hides the quick capture box.
 #[tauri::command]
 #[specta::specta]

@@ -63,6 +63,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             commands::open_notification_settings,
             commands::capture_ticket,
             commands::close_capture,
+            commands::cli_path,
             commands::list_attachments,
             commands::add_attachments,
             commands::add_attachment_data,

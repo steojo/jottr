@@ -23,6 +23,7 @@ import {
   useAutoArchive,
   useCapturedTickets,
   useBoards,
+  useCliPath,
   useCreateProject,
   useDeleteBoard,
   useDeleteProject,
@@ -47,6 +48,7 @@ import {
   NO_FILTERS,
   NO_PROJECT,
   SWATCH_BG,
+  agentPrompt,
   applyFilters,
   archiveGroups,
   boardColumns,
@@ -107,6 +109,7 @@ function App() {
   const settings = useSettings().data;
   const restoreTicket = useRestoreTicket();
   const addAttachments = useAddAttachments();
+  const cliPath = useCliPath();
   useAutoArchive();
   useCapturedTickets();
   useOutsideChanges();
@@ -371,6 +374,13 @@ function App() {
     );
   }
 
+  function copyForAgent(ticket: Ticket) {
+    navigator.clipboard.writeText(agentPrompt(ticket, cliPath)).then(
+      () => setToast(`Copied a prompt for ${ticketKey(ticket) ?? "this ticket"}. Paste it into your agent.`),
+      () => setToast("Couldn't copy to the clipboard"),
+    );
+  }
+
   // From the notes, ⌘B goes back to the board's tickets as they were.
   const toggleLayout = () =>
     view.kind === "board" && (showNotes ? setNotesOpen(false) : setLayout(showBoard ? "list" : "board"));
@@ -425,6 +435,7 @@ function App() {
     a: () => target && restore(target),
     u: () => target && void pickFiles(target),
     "mod+shift+c": () => target && copyId(target),
+    "mod+alt+c": () => target && copyForAgent(target),
     "mod+backspace": () => target && setDeletingTicket(target),
     "g i": () => navigate({ kind: "inbox" }),
     "g f": () => navigate({ kind: "focus" }),
@@ -460,6 +471,7 @@ function App() {
       ticketCommand("prev-status", "Move to previous status", "[", () => runShortcut("["), "back");
     }
     ticketCommand("copy", "Copy ticket ID", "⌘ ⇧ C", () => copyId(target), "clipboard");
+    ticketCommand("copy-agent", "Copy for agent", "⌘ ⌥ C", () => copyForAgent(target), "prompt clipboard ai claude codex");
     ticketCommand("delete", "Delete ticket…", "⌘ ⌫", () => setDeletingTicket(target), "remove");
   }
   commands.push(
@@ -772,6 +784,7 @@ function App() {
             onMove={moveTicket}
             onDelete={setDeletingTicket}
             onRestore={restore}
+            onCopyForAgent={copyForAgent}
             onAttach={attach}
             onPickFiles={(ticket) => void pickFiles(ticket)}
           />
@@ -799,6 +812,7 @@ function App() {
             onCreate={setCreating}
             onMove={moveTicket}
             onDelete={setDeletingTicket}
+            onCopyForAgent={copyForAgent}
           />
         ) : (
           <TicketList
@@ -813,6 +827,7 @@ function App() {
             onCreate={setCreating}
             onMove={moveTicket}
             onDelete={setDeletingTicket}
+            onCopyForAgent={copyForAgent}
             onRestore={view.kind === "archive" ? restore : undefined}
             empty={empty}
           />

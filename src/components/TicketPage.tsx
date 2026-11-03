@@ -34,6 +34,7 @@ export function TicketPage({
   onMove,
   onDelete,
   onRestore,
+  onCopyForAgent,
   onAttach,
   onPickFiles,
 }: {
@@ -46,6 +47,7 @@ export function TicketPage({
   onMove: (ticket: Ticket, to: Destination) => void;
   onDelete: (ticket: Ticket) => void;
   onRestore: (ticket: Ticket) => void;
+  onCopyForAgent: (ticket: Ticket) => void;
   onAttach: (ticket: Ticket, source: AttachSource) => void;
   /** Opens the file picker to attach files. */
   onPickFiles: (ticket: Ticket) => void;
@@ -190,10 +192,19 @@ export function TicketPage({
         <Timestamp label="Updated" ms={ticket.updatedAt} />
         <button
           type="button"
+          title="Copy a prompt to paste into your agent · ⌘⌥C"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onCopyForAgent(ticket)}
+          className="mt-auto flex h-8 items-center rounded-md px-2 text-left text-fg-secondary hover:bg-surface-hover"
+        >
+          Copy for agent
+        </button>
+        <button
+          type="button"
           title="Delete ticket · ⌘⌫"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onDelete(ticket)}
-          className="mt-auto flex h-8 items-center rounded-md px-2 text-left text-fg-tertiary hover:bg-surface-hover hover:text-status-error"
+          className="flex h-8 items-center rounded-md px-2 text-left text-fg-tertiary hover:bg-surface-hover hover:text-status-error"
         >
           Delete ticket
         </button>

@@ -83,6 +83,7 @@ Rust owns all data; the UI never touches the database directly.
   - `update_settings` registers a changed shortcut before committing, so one macOS refuses is never saved.
   - Closing the main window quits the app, since the hidden capture window would otherwise keep it running.
 - **Command line (`cli.rs`):** given arguments, the app binary runs a command and exits without a window (`main.rs`), so agents can use Jottr; `jottr help` lists the commands. It goes through the store functions and checks every argument before saving anything. `db::open_existing` never creates or migrates the database and refuses another schema version, and `JOTTR_DB` points it at a copy. The app notices its commits through SQLite's `data_version` (`watch_outside_changes` in `lib.rs`, checked each second) and refetches every query; open editors take the new text unless they have unsaved edits. When agents should reach a new feature, add a command for it too.
+  - Copy for agent (`⌘⌥C`, `agentPrompt` in `src/lib/tickets.ts`) copies a prompt that names the ticket and the command line's path (`cli_path`, the running binary), so the agent reads the latest version itself.
 - **Permissions:** any new Tauri plugin or window/API call needs its permission added to `src-tauri/capabilities/default.json`.
 
 ## Styling & design rules

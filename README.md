@@ -21,6 +21,8 @@ Jottr works with AI coding agents like Claude Code and Codex. The app doubles as
 
 To use it from any project, give your agent a skill or instruction that points at this command and `jottr help`.
 
+Going the other way, **Copy for agent** (`⌘⌥C`, or right-click a ticket) copies a prompt you can paste into your agent. It names the ticket and how to read it, and asks the agent to move the ticket along as it works.
+
 ## Develop
 
 ```sh

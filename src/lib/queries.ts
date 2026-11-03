@@ -567,6 +567,13 @@ export function useOutsideChanges() {
   }, [qc]);
 }
 
+/** Where the `jottr` command line is, for prompts that tell an agent how to reach Jottr. */
+export function useCliPath() {
+  const path = useQuery({ queryKey: ["cli-path"], queryFn: commands.cliPath }).data;
+  // Until it loads, where the app is normally installed.
+  return path ?? "/Applications/Jottr.app/Contents/MacOS/jottr";
+}
+
 const settingsKey = ["settings"] as const;
 const notificationStatusKey = ["notification-status"] as const;
 

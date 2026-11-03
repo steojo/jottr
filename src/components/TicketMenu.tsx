@@ -29,6 +29,7 @@ export function TicketMenu({
   onPriority,
   onMove,
   onDelete,
+  onCopyForAgent,
   onRestore,
   children,
 }: {
@@ -40,6 +41,7 @@ export function TicketMenu({
   onPriority: (priority: Priority) => void;
   onMove: (to: Destination) => void;
   onDelete: () => void;
+  onCopyForAgent: () => void;
   /** Shown for archived tickets. */
   onRestore?: () => void;
   children: ReactNode;
@@ -100,6 +102,11 @@ export function TicketMenu({
             ))}
           </Submenu>
           <ContextMenu.Separator className="my-1 h-px bg-line-subtle" />
+          <ContextMenu.Item className={item} onSelect={onCopyForAgent}>
+            <span className="size-3.5" />
+            <span className="flex-1">Copy for agent</span>
+            <Kbd>⌘⌥C</Kbd>
+          </ContextMenu.Item>
           <ContextMenu.Item className={`${item} data-[highlighted]:text-status-error`} onSelect={onDelete}>
             <span className="size-3.5" />
             <span className="flex-1">Delete…</span>

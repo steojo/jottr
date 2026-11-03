@@ -16,7 +16,8 @@ function isTyping(target: EventTarget | null) {
 }
 
 function combo(e: KeyboardEvent) {
-  const key = e.key.toLowerCase();
+  // ⌥ changes the character a letter types (⌥C types ç), so name letters by their key.
+  const key = e.altKey && /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
   const parts: string[] = [];
   if (e.metaKey) parts.push("mod");
   if (e.altKey) parts.push("alt");

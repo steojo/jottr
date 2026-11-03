@@ -74,6 +74,8 @@ export const commands = {
 	captureTicket: (title: string) => __TAURI_INVOKE<Ticket>("capture_ticket", { title }),
 	/**  Hides the quick capture box. */
 	closeCapture: () => __TAURI_INVOKE<void>("close_capture"),
+	/**  The `jottr` command line is the app's own binary, wherever it's installed. */
+	cliPath: () => __TAURI_INVOKE<string>("cli_path"),
 	/**  A ticket's attachments, oldest first. */
 	listAttachments: (ticketId: string) => __TAURI_INVOKE<Attachment[]>("list_attachments", { ticketId }),
 	/**  Copies files (by path, from the file picker or a drop) and attaches them to a ticket. */

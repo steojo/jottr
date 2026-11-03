@@ -32,6 +32,7 @@ export function TicketList({
   onCreate,
   onMove,
   onDelete,
+  onCopyForAgent,
   onRestore,
   empty,
 }: {
@@ -47,6 +48,7 @@ export function TicketList({
   onCreate: (status: Status) => void;
   onMove: (ticket: Ticket, to: Destination) => void;
   onDelete: (ticket: Ticket) => void;
+  onCopyForAgent: (ticket: Ticket) => void;
   /** Set in the Archive. */
   onRestore?: (ticket: Ticket) => void;
   /** `hint` follows "Press C"; `detail` is plain text; `action` replaces the hint, e.g. Clear filters. */
@@ -177,6 +179,7 @@ export function TicketList({
               onPriority={(priority) => update.mutate({ ticket, patch: patch({ priority }) })}
               onMove={(to) => onMove(ticket, to)}
               onDelete={() => onDelete(ticket)}
+              onCopyForAgent={() => onCopyForAgent(ticket)}
               onRestore={onRestore && (() => onRestore(ticket))}
             >
               <TicketRow

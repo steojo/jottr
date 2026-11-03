@@ -73,6 +73,7 @@ export function Board({
   onCreate,
   onMove,
   onDelete,
+  onCopyForAgent,
 }: {
   boardId: string;
   tickets: Ticket[] | undefined;
@@ -86,6 +87,7 @@ export function Board({
   onCreate: (status: Status) => void;
   onMove: (ticket: Ticket, to: Destination) => void;
   onDelete: (ticket: Ticket) => void;
+  onCopyForAgent: (ticket: Ticket) => void;
 }) {
   const [collapsed, setCollapsed] = usePersistentState<Status[]>(`jottr.collapsed.${boardId}`, ["canceled"]);
   // Keyboard focus ring only shows after keyboard navigation, never after a click.
@@ -295,6 +297,7 @@ export function Board({
                   onPriority={(priority) => update.mutate({ ticket, patch: patch({ priority }) })}
                   onMove={(target) => onMove(ticket, target)}
                   onDelete={() => onDelete(ticket)}
+                  onCopyForAgent={() => onCopyForAgent(ticket)}
                 >
                   <SortableCard
                     ticket={ticket}
