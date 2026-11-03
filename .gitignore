@@ -24,4 +24,4 @@ dist-ssr
 *.sw?
 
 # Third-party design references (not ours to publish)
-/references/
+/references
