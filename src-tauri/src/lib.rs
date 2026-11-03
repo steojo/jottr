@@ -1,4 +1,5 @@
 mod capture;
+mod cli;
 mod commands;
 mod db;
 mod models;
@@ -6,8 +7,9 @@ mod notifications;
 mod store;
 
 use std::sync::Mutex;
+use std::time::Duration;
 
-use tauri::Manager;
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 use tauri_specta::{collect_commands, Builder, ErrorHandlingMode};
 
@@ -127,10 +129,35 @@ pub fn run() {
             app.manage(db::Db(Mutex::new(conn)));
             app.manage(db::AttachmentsDir(dir.join("attachments")));
             notifications::start(app.handle());
+            watch_outside_changes(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Runs the `jottr` command line instead of the app. Returns the exit code.
+pub fn cli(args: Vec<String>) -> i32 {
+    cli::run(args)
+}
+
+/// The command line writes from another process, so the windows can't see those changes. SQLite's
+/// `data_version` moves when another connection commits; checking it each second costs one pragma.
+fn watch_outside_changes(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let version = || app.state::<db::Db>().0.lock().ok().and_then(|conn| db::data_version(&conn).ok());
+        let mut last = version();
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+            let current = version();
+            if current != last {
+                last = current;
+                let _ = app.emit_to("main", "data-changed-outside", ());
+                notifications::refresh(&app);
+            }
+        }
+    });
 }
 
 #[cfg(test)]

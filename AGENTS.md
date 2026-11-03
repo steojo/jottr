@@ -18,6 +18,7 @@ npm install
 npm run tauri dev     # run the app: Vite on fixed port 1420 with HMR; Rust changes recompile and relaunch
 npm run tauri build   # release build → src-tauri/target/release/bundle/ (Jottr.app + .dmg)
 npm run install-app   # release build of Jottr.app that replaces /Applications/Jottr.app, quitting and reopening it
+cd src-tauri && JOTTR_DB=/tmp/copy.db cargo run -q -- boards   # the command line, on a copy of the database
 npm run build         # tsc type-check + Vite build of the frontend only (fastest TS check)
 cd src-tauri && cargo test     # Rust tests (also regenerates src/bindings.ts)
 cd src-tauri && cargo test store::tests::numbers_tickets_per_board   # a single test
@@ -81,6 +82,7 @@ Rust owns all data; the UI never touches the database directly.
   - Enter calls `capture_ticket`, which adds the ticket to the bottom of the Inbox, hides the box and emits `ticket-captured` for the main window's cache (`useCapturedTickets`). Losing focus hides it too.
   - `update_settings` registers a changed shortcut before committing, so one macOS refuses is never saved.
   - Closing the main window quits the app, since the hidden capture window would otherwise keep it running.
+- **Command line (`cli.rs`):** given arguments, the app binary runs a command and exits without a window (`main.rs`), so agents can use Jottr; `jottr help` lists the commands. It goes through the store functions and checks every argument before saving anything. `db::open_existing` never creates or migrates the database and refuses another schema version, and `JOTTR_DB` points it at a copy. The app notices its commits through SQLite's `data_version` (`watch_outside_changes` in `lib.rs`, checked each second) and refetches every query; open editors take the new text unless they have unsaved edits. When agents should reach a new feature, add a command for it too.
 - **Permissions:** any new Tauri plugin or window/API call needs its permission added to `src-tauri/capabilities/default.json`.
 
 ## Styling & design rules

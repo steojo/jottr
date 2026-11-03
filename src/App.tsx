@@ -31,6 +31,7 @@ import {
   useLabels,
   useMoveTicket,
   useNotificationTickets,
+  useOutsideChanges,
   useProjects,
   useRenameProject,
   useReorderBoard,
@@ -108,6 +109,7 @@ function App() {
   const addAttachments = useAddAttachments();
   useAutoArchive();
   useCapturedTickets();
+  useOutsideChanges();
   useNotificationTickets(openAnywhere, setToast);
   const createProject = useCreateProject();
   const renameProject = useRenameProject();

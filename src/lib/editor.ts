@@ -71,5 +71,13 @@ export function useMarkdownEditor({
 
   useEffect(() => flush, []);
 
+  // The `jottr` command line can change the text while it's open. Show its version unless
+  // there are edits here still to save, which win.
+  useEffect(() => {
+    if (!editor || value === saved.current || latest.current !== saved.current) return;
+    saved.current = latest.current = value;
+    editor.commands.setContent(value, { contentType: "markdown", emitUpdate: false });
+  }, [editor, value]);
+
   return editor;
 }

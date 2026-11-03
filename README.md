@@ -8,6 +8,19 @@ A lightweight, fast Kanban app for macOS. Single-user and fully local: no accoun
 
 Download the latest `.dmg` from [Releases](https://github.com/steojo/jottr/releases) (Apple Silicon only). Jottr isn't notarized yet, so macOS blocks the first launch: drag Jottr to Applications and open it, then go to System Settings → Privacy & Security and click Open Anyway.
 
+## Agent-native
+
+Jottr works with AI coding agents like Claude Code and Codex. The app doubles as a command line, so an agent can read your boards and notes, make tickets and move them along while it works. Changes appear in the open app within a second, and everything stays on your Mac.
+
+```sh
+/Applications/Jottr.app/Contents/MacOS/jottr help                     # every command
+/Applications/Jottr.app/Contents/MacOS/jottr tickets "ENG/iOS Apps"   # a project's open tickets
+/Applications/Jottr.app/Contents/MacOS/jottr update ENG-28 --status in_review
+/Applications/Jottr.app/Contents/MacOS/jottr append-note ENG "Notes" "- an idea"
+```
+
+To use it from any project, give your agent a skill or instruction that points at this command and `jottr help`.
+
 ## Develop
 
 ```sh

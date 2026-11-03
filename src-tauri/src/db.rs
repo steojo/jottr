@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 
 /// Applied in order. A database at `user_version` N has run the first N migrations.
 const MIGRATIONS: &[&str] = &[
@@ -36,14 +36,44 @@ pub fn open_in_memory() -> rusqlite::Result<Connection> {
     init(Connection::open_in_memory()?)
 }
 
+/// Opens the app's database from the command line, which runs alongside the app. It never
+/// migrates, so a different build of Jottr can't change the schema under the running app.
+pub fn open_existing(path: &Path) -> Result<Connection, String> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+        .map_err(|e| e.to_string())?;
+    configure(&conn).map_err(|e| e.to_string())?;
+    let version: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|e| e.to_string())?;
+    if version != MIGRATIONS.len() as i64 {
+        return Err(format!(
+            "This database is from a different version of Jottr (schema {version}, expected {}). \
+             Use the command line from the Jottr app that opens it.",
+            MIGRATIONS.len()
+        ));
+    }
+    Ok(conn)
+}
+
+/// Changes whenever another connection, such as the command line, commits to the database.
+pub fn data_version(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.pragma_query_value(None, "data_version", |row| row.get(0))
+}
+
 fn init(mut conn: Connection) -> rusqlite::Result<Connection> {
+    configure(&conn)?;
+    migrate(&mut conn)?;
+    Ok(conn)
+}
+
+fn configure(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;
          PRAGMA foreign_keys = ON;",
     )?;
-    migrate(&mut conn)?;
-    Ok(conn)
+    // The app and the command line take turns writing instead of failing with "database is locked".
+    conn.busy_timeout(Duration::from_secs(5))
 }
 
 fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
@@ -72,6 +102,23 @@ pub fn new_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_line_only_opens_a_matching_database() {
+        let path = std::env::temp_dir().join(format!("jottr-test-{}.db", new_id()));
+        assert!(open_existing(&path).is_err(), "it never creates one");
+        let app = open(&path).unwrap();
+        let cli = open_existing(&path).unwrap();
+        let seen = data_version(&app).unwrap();
+        cli.execute("UPDATE settings SET show_created = show_created", []).unwrap();
+        assert_ne!(data_version(&app).unwrap(), seen, "the app notices the command line's change");
+
+        app.pragma_update(None, "user_version", MIGRATIONS.len() as i64 + 1).unwrap();
+        assert!(open_existing(&path).unwrap_err().contains("different version"));
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
 
     #[test]
     fn moves_existing_notes_into_note_tabs() {

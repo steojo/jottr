@@ -558,6 +558,15 @@ export function useCapturedTickets() {
   }, [qc]);
 }
 
+/** The `jottr` command line changes data from outside the app, and Rust says when. */
+export function useOutsideChanges() {
+  const qc = useQueryClient();
+  useEffect(() => {
+    const stop = listen("data-changed-outside", () => void qc.invalidateQueries());
+    return () => void stop.then((unlisten) => unlisten());
+  }, [qc]);
+}
+
 const settingsKey = ["settings"] as const;
 const notificationStatusKey = ["notification-status"] as const;
 
